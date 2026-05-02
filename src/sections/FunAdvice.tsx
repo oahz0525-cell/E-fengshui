@@ -2,6 +2,12 @@ import { useEffect, useState } from 'react';
 import type { XiShen, Element } from '@/types';
 import { trpc } from '@/providers/trpc';
 import { SealedSection } from '@/components/SealedSection';
+import {
+  AI_CLIENT_TIMEOUT_MS,
+  AI_RETRY_DELAY_MS,
+  AI_RETRY_ON_TIMEOUT,
+} from '@/config/aiClient';
+import { callAiMutation } from '@/utils/callAiMutation';
 
 const ADVICE_POOL = [
   { icon: '🌿', text: '桌面上放一盆薄荷或绿萝，工作前摸三下叶子。这是你今天的微型森林，触叶即安。' },
@@ -54,19 +60,27 @@ export function FunAdvice({
     (async () => {
       setLoading(true);
       try {
-        const r = await mutateAsync({
-          el,
-          xi: xi.xi.map((x) => String(x)),
-          goal: goalLabel,
-          weather: weatherLabel,
-          lat,
-          lng,
-          stem,
-          floor,
-          goalKey,
-          cityHint: cityHint || undefined,
-          forecastDetail: forecastDetail || undefined,
-        });
+        const r = await callAiMutation(
+          () =>
+            mutateAsync({
+              el,
+              xi: xi.xi.map((x) => String(x)),
+              goal: goalLabel,
+              weather: weatherLabel,
+              lat,
+              lng,
+              stem,
+              floor,
+              goalKey,
+              cityHint: cityHint || undefined,
+              forecastDetail: forecastDetail || undefined,
+            }),
+          {
+            timeoutMs: AI_CLIENT_TIMEOUT_MS,
+            retriesOnTimeout: AI_RETRY_ON_TIMEOUT,
+            retryDelayMs: AI_RETRY_DELAY_MS,
+          },
+        );
         if (cancelled) return;
         const lines = r.lines;
         setProvider((r.provider as 'kimi' | 'deepseek' | 'openai' | 'none') || 'none');
@@ -106,7 +120,7 @@ export function FunAdvice({
     source === 'ai'
       ? `● ${provider === 'kimi' ? 'Kimi' : provider === 'deepseek' ? 'DeepSeek' : provider === 'openai' ? 'OpenAI' : 'AI'} 解读`
       : source === 'local'
-        ? '内置锦囊'
+        ? '内置锦囊（接口不可用）'
         : '…';
 
   return (

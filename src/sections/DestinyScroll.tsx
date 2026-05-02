@@ -7,6 +7,12 @@ import { DISTANCE_BUCKETS } from '@/data/elements';
 import { POEM_TEMPLATES } from '@/data/poems';
 import { haversine } from '@/utils/geo';
 import { hash } from '@/utils/hash';
+import {
+  AI_CLIENT_TIMEOUT_MS,
+  AI_RETRY_DELAY_MS,
+  AI_RETRY_ON_TIMEOUT,
+} from '@/config/aiClient';
+import { callAiMutation } from '@/utils/callAiMutation';
 import type { DestinyMode, Element } from '@/types';
 import type { DestinyLogItem } from '@/hooks/useDestinyQuota';
 
@@ -123,11 +129,19 @@ export function DestinyScroll({
       let poem: string | null = null;
       if (aiPoem) {
         try {
-          const pr = await poemMut.mutateAsync({
-            spotName: s.name,
-            dist: s.dist || 0,
-            xi: xiShen.xi.map(String),
-          });
+          const pr = await callAiMutation(
+            () =>
+              poemMut.mutateAsync({
+                spotName: s.name,
+                dist: s.dist || 0,
+                xi: xiShen.xi.map(String),
+              }),
+            {
+              timeoutMs: AI_CLIENT_TIMEOUT_MS,
+              retriesOnTimeout: AI_RETRY_ON_TIMEOUT,
+              retryDelayMs: AI_RETRY_DELAY_MS,
+            },
+          );
           poem = pr.poem;
         } catch {
           poem = null;

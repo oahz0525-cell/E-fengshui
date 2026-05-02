@@ -85,7 +85,10 @@ export function SealedSection({
               {subtitle ? <p className="mt-2 text-[11px] text-[#e8e4dc]/30">{subtitle}</p> : null}
             </div>
 
-            <span className="text-[10px] tracking-[0.14em] text-[#e8e4dc]/28">展开</span>
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-[10px] tracking-[0.14em] text-[#e8e4dc]/28">展开</span>
+              <span className="text-[9px] text-[#e8e4dc]/18">查看锦囊或预言正文</span>
+            </div>
           </button>
         )}
 

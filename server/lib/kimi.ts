@@ -4,7 +4,17 @@ const KIMI_URL = "https://api.moonshot.cn/v1/chat/completions";
 const OPENAI_URL = `${env.openaiBaseUrl.replace(/\/$/, "")}/chat/completions`;
 const DEEPSEEK_URL = `${env.deepseekBaseUrl.replace(/\/$/, "")}/chat/completions`;
 
-async function chatOnce(model: string, prompt: string): Promise<string | null> {
+/** Upper bound on completion length per task — smaller = faster generation & lower latency. */
+const MAX_OUT_FUN_ADVICE = 420;
+const MAX_OUT_PROPHECY = 400;
+const MAX_OUT_SPOT_POEM = 220;
+const MAX_OUT_DEFAULT = 520;
+
+async function chatOnce(
+  model: string,
+  prompt: string,
+  maxTokens: number,
+): Promise<string | null> {
   const key = env.kimiApiKey;
   if (!key) return null;
   const res = await fetch(KIMI_URL, {
@@ -16,8 +26,8 @@ async function chatOnce(model: string, prompt: string): Promise<string | null> {
     body: JSON.stringify({
       model,
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.8,
-      max_tokens: 900,
+      temperature: 0.75,
+      max_tokens: maxTokens,
     }),
   });
   if (!res.ok) return null;
@@ -25,7 +35,11 @@ async function chatOnce(model: string, prompt: string): Promise<string | null> {
   return data.choices?.[0]?.message?.content?.trim() || null;
 }
 
-async function chatDeepSeekOnce(model: string, prompt: string): Promise<string | null> {
+async function chatDeepSeekOnce(
+  model: string,
+  prompt: string,
+  maxTokens: number,
+): Promise<string | null> {
   const key = env.deepseekApiKey;
   if (!key) return null;
   const res = await fetch(DEEPSEEK_URL, {
@@ -37,8 +51,8 @@ async function chatDeepSeekOnce(model: string, prompt: string): Promise<string |
     body: JSON.stringify({
       model,
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.8,
-      max_tokens: 900,
+      temperature: 0.75,
+      max_tokens: maxTokens,
     }),
   });
   if (!res.ok) return null;
@@ -46,7 +60,11 @@ async function chatDeepSeekOnce(model: string, prompt: string): Promise<string |
   return data.choices?.[0]?.message?.content?.trim() || null;
 }
 
-async function chatOpenAIOnce(model: string, prompt: string): Promise<string | null> {
+async function chatOpenAIOnce(
+  model: string,
+  prompt: string,
+  maxTokens: number,
+): Promise<string | null> {
   const key = env.openaiApiKey;
   if (!key) return null;
   const res = await fetch(OPENAI_URL, {
@@ -58,8 +76,8 @@ async function chatOpenAIOnce(model: string, prompt: string): Promise<string | n
     body: JSON.stringify({
       model,
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.8,
-      max_tokens: 900,
+      temperature: 0.75,
+      max_tokens: maxTokens,
     }),
   });
   if (!res.ok) return null;
@@ -68,51 +86,44 @@ async function chatOpenAIOnce(model: string, prompt: string): Promise<string | n
 }
 
 export async function callLlm(prompt: string): Promise<string | null> {
-  const primary = env.kimiModel.trim() || "kimi-k2-turbo-preview";
-  const fallbacks = ["kimi-k2-turbo-preview", "moonshot-v1-32k", "moonshot-v1-128k"];
-  const models = [primary, ...fallbacks.filter((m) => m !== primary)];
-  try {
-    if (env.kimiApiKey) {
-      for (const model of models) {
-        const text = await chatOnce(model, prompt);
-        if (text) return text;
-      }
-    }
-    if (env.deepseekApiKey) {
-      const text = await chatDeepSeekOnce(env.deepseekModel.trim() || "deepseek-chat", prompt);
-      if (text) return text;
-    }
-    if (env.openaiApiKey) {
-      const text = await chatOpenAIOnce(env.openaiModel.trim() || "gpt-4o-mini", prompt);
-      if (text) return text;
-    }
-    return null;
-  } catch {
-    return null;
-  }
+  const r = await callLlmWithProvider(prompt, { maxOutputTokens: MAX_OUT_DEFAULT });
+  return r.text;
 }
 
 export type LlmProvider = "kimi" | "deepseek" | "openai" | "none";
 
 export async function callLlmWithProvider(
   prompt: string,
+  options?: { maxOutputTokens?: number },
 ): Promise<{ text: string | null; provider: LlmProvider }> {
+  const maxTokens = Math.min(
+    8192,
+    Math.max(64, options?.maxOutputTokens ?? MAX_OUT_DEFAULT),
+  );
   const primary = env.kimiModel.trim() || "kimi-k2-turbo-preview";
   const fallbacks = ["kimi-k2-turbo-preview", "moonshot-v1-32k", "moonshot-v1-128k"];
   const models = [primary, ...fallbacks.filter((m) => m !== primary)];
   try {
     if (env.kimiApiKey) {
       for (const model of models) {
-        const text = await chatOnce(model, prompt);
+        const text = await chatOnce(model, prompt, maxTokens);
         if (text) return { text, provider: "kimi" };
       }
     }
     if (env.deepseekApiKey) {
-      const text = await chatDeepSeekOnce(env.deepseekModel.trim() || "deepseek-chat", prompt);
+      const text = await chatDeepSeekOnce(
+        env.deepseekModel.trim() || "deepseek-chat",
+        prompt,
+        maxTokens,
+      );
       if (text) return { text, provider: "deepseek" };
     }
     if (env.openaiApiKey) {
-      const text = await chatOpenAIOnce(env.openaiModel.trim() || "gpt-4o-mini", prompt);
+      const text = await chatOpenAIOnce(
+        env.openaiModel.trim() || "gpt-4o-mini",
+        prompt,
+        maxTokens,
+      );
       if (text) return { text, provider: "openai" };
     }
     return { text: null, provider: "none" };
@@ -157,7 +168,9 @@ export async function generateFunAdviceLines(
 3. 不要直白堆砌五行术语；结合心理学与易经意象即可。
 4. 每条前面加一个 emoji，控制在40字以内。
 直接输出3条，每条一行，格式：emoji 建议内容`;
-  const { text, provider } = await callLlmWithProvider(prompt);
+  const { text, provider } = await callLlmWithProvider(prompt, {
+    maxOutputTokens: MAX_OUT_FUN_ADVICE,
+  });
   if (!text) return { lines: null, provider };
   return { lines: text.split("\n").filter((l) => l.trim().length > 5).slice(0, 3), provider };
 }
@@ -168,7 +181,9 @@ export async function generateSpotPoemText(
   xi: string[],
 ): Promise<{ poem: string | null; provider: LlmProvider }> {
   const prompt = `你是一位松弛感风水顾问。用户今日来到"${spotName}"，距离约${Math.round(dist)}米。用户八字喜${xi.join("、")}。请生成一段40字以内的诗意场景描述，不要直白解释五行，用画面感和动作感，语气松弛自然像朋友聊天。`;
-  const { text, provider } = await callLlmWithProvider(prompt);
+  const { text, provider } = await callLlmWithProvider(prompt, {
+    maxOutputTokens: MAX_OUT_SPOT_POEM,
+  });
   const poem = text ? text.replace(/^["'`]+|["'`]+$/g, "").trim() : null;
   return { poem, provider };
 }
@@ -203,7 +218,9 @@ export async function generateProphecyBlock(
 请只输出一段合法 JSON（不要 markdown），格式：
 {"advice":"明日运势语气松弛的一段中文60字内","dir":"东或南或西或北或东南或东北或西南或西北之一","time":"像07:00-09:00这样的时段","itemName":"随身小物名称四字内","itemDesc":"描述25字内","itemEmoji":"单个emoji"}
 `;
-  const { text: raw, provider } = await callLlmWithProvider(prompt);
+  const { text: raw, provider } = await callLlmWithProvider(prompt, {
+    maxOutputTokens: MAX_OUT_PROPHECY,
+  });
   if (!raw) return { block: null, provider };
   const slice = raw.match(/\{[\s\S]*\}/);
   if (!slice) return { block: null, provider };

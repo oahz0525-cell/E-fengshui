@@ -3,6 +3,12 @@ import type { XiShen } from '@/types';
 import { hash } from '@/utils/hash';
 import { trpc } from '@/providers/trpc';
 import { SealedSection } from '@/components/SealedSection';
+import {
+  AI_CLIENT_TIMEOUT_MS,
+  AI_RETRY_DELAY_MS,
+  AI_RETRY_ON_TIMEOUT,
+} from '@/config/aiClient';
+import { callAiMutation } from '@/utils/callAiMutation';
 
 const ITEM_POOL = [
   { icon: '🪵', name: '木质物件', desc: '一块木头的手感，是任何塑料都给不了的踏实。' },
@@ -54,16 +60,24 @@ export function Prophecy({
     (async () => {
       setLoading(true);
       try {
-        const r = await fetchProphecy({
-          xi: xi.xi.map(String),
-          lat,
-          lng,
-          stem,
-          floor,
-          goalKey,
-          cityHint: cityHint || undefined,
-          forecastDetail: forecastDetail || undefined,
-        });
+        const r = await callAiMutation(
+          () =>
+            fetchProphecy({
+              xi: xi.xi.map(String),
+              lat,
+              lng,
+              stem,
+              floor,
+              goalKey,
+              cityHint: cityHint || undefined,
+              forecastDetail: forecastDetail || undefined,
+            }),
+          {
+            timeoutMs: AI_CLIENT_TIMEOUT_MS,
+            retriesOnTimeout: AI_RETRY_ON_TIMEOUT,
+            retryDelayMs: AI_RETRY_DELAY_MS,
+          },
+        );
         if (cancelled) return;
         setProvider((r.provider as 'kimi' | 'deepseek' | 'openai' | 'none') || 'none');
         const b = r.block;
@@ -114,7 +128,7 @@ export function Prophecy({
     source === 'ai'
       ? `● ${provider === 'kimi' ? 'Kimi' : provider === 'deepseek' ? 'DeepSeek' : provider === 'openai' ? 'OpenAI' : 'AI'} 执笔`
       : source === 'local'
-        ? '内置模版'
+        ? '内置模版（接口不可用）'
         : loading
           ? '…'
           : '…';
