@@ -52,6 +52,12 @@ export function DestinyScroll({
     /Safari/i.test(navigator.userAgent) &&
     !/Chrome|Chromium|CriOS|Edg|Firefox|FxiOS/i.test(navigator.userAgent);
 
+  /** iOS / iPadOS 全系浏览器均为 WebKit，半透明叠层易与页面糊在一起 */
+  const isIOSLike =
+    typeof navigator !== 'undefined' &&
+    (/iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
   const rollRef = useRef(0);
   const [slotsLeft, setSlotsLeft] = useState(remainingSlots);
   useEffect(() => {
@@ -189,14 +195,19 @@ export function DestinyScroll({
 
   return (
     <div
-      className={`fixed inset-0 z-[200] flex items-center justify-center p-5 ${
-        isSafari ? 'bg-[#09090b]/98' : 'bg-[#09090b]/96 backdrop-blur-xl'
+      className={`fixed inset-0 z-[200] flex items-center justify-center p-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] ${
+        isSafari || isIOSLike
+          ? 'bg-[#070605]'
+          : 'bg-[#09090b]/96 backdrop-blur-xl'
       }`}
       onClick={(e) => e.target === e.currentTarget && dismissOverlay()}
     >
-      <div className="w-full max-w-[420px] relative" onClick={(e) => e.stopPropagation()}>
-        <div className="relative p-8 rounded-[20px] bg-gradient-to-b from-[#3c321e]/15 to-[#1e190f]/25 border border-[#b4a064]/15 shadow-[0_20px_60px_rgba(0,0,0,0.5)]">
-          <div className="absolute top-0 left-5 right-5 h-px bg-gradient-to-r from-transparent via-[#b4a064]/30 to-transparent" />
+      <div
+        className="w-full max-w-[420px] relative isolate [transform:translateZ(0)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="relative p-8 rounded-[20px] bg-gradient-to-b from-[#2a261f] to-[#141210] border border-[#b4a064]/35 shadow-[0_24px_64px_rgba(0,0,0,0.75)] ring-1 ring-black/50">
+          <div className="absolute top-0 left-5 right-5 h-px bg-gradient-to-r from-transparent via-[#b4a064]/45 to-transparent" />
 
           {showPicker && (
             <div>
@@ -210,8 +221,8 @@ export function DestinyScroll({
                       onClick={() => selectMode(key)}
                       className={`p-5 rounded-2xl cursor-pointer transition-all flex items-center gap-4 border ${
                         mode === key
-                          ? 'bg-[#6b8f4a]/[0.06] border-[#6b8f4a]/25'
-                          : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.055] hover:-translate-y-0.5'
+                          ? 'bg-[#1e2a18] border-[#6b8f4a]/45'
+                          : 'bg-[#1f1c17] border-[#4a4338]/80 hover:bg-[#252018] hover:-translate-y-0.5'
                       }`}
                     >
                       <span className="text-[28px] shrink-0 opacity-70">{b.icon}</span>
@@ -233,8 +244,8 @@ export function DestinyScroll({
                   disabled={!mode || slotsLeft <= 0}
                   className={`flex-1 py-3.5 rounded-[14px] text-sm border transition-all cursor-pointer ${
                     mode && slotsLeft > 0
-                      ? 'bg-[#6b8f4a]/12 border-[#6b8f4a]/25 text-[#6b8f4a]/90 hover:bg-[#6b8f4a]/20'
-                      : 'bg-white/[0.03] border-white/[0.08] text-[#e8e4dc]/30 opacity-40 pointer-events-none'
+                      ? 'bg-[#243520] border-[#6b8f4a]/40 text-[#a8c896] hover:bg-[#2a4028]'
+                      : 'bg-[#1a1816] border-[#3a3632] text-[#e8e4dc]/30 opacity-40 pointer-events-none'
                   }`}
                 >
                   🎋 抽签
@@ -242,7 +253,7 @@ export function DestinyScroll({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="flex-1 py-3.5 rounded-[14px] text-sm bg-white/[0.03] border border-white/[0.08] text-[#e8e4dc]/50 hover:bg-white/[0.06] cursor-pointer transition-all"
+                  className="flex-1 py-3.5 rounded-[14px] text-sm bg-[#1f1c18] border border-[#4a4338]/90 text-[#e8e4dc]/75 hover:bg-[#28241e] cursor-pointer transition-all"
                 >
                   返回
                 </button>
@@ -279,7 +290,7 @@ export function DestinyScroll({
               <button
                 type="button"
                 onClick={finishAndClose}
-                className="w-full mt-6 py-3.5 rounded-[14px] text-sm bg-[#6b8f4a]/12 border border-[#6b8f4a]/25 text-[#6b8f4a]/90 hover:bg-[#6b8f4a]/20 cursor-pointer transition-all"
+                className="w-full mt-6 py-3.5 rounded-[14px] text-sm bg-[#243520] border border-[#6b8f4a]/40 text-[#a8c896] hover:bg-[#2a4028] cursor-pointer transition-all"
               >
                 关闭 · 记入今日寻地签
               </button>
