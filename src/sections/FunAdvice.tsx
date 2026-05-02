@@ -7,20 +7,8 @@ import {
   AI_RETRY_DELAY_MS,
   AI_RETRY_ON_TIMEOUT,
 } from '@/config/aiClient';
+import { pickLocalFunAdvices } from '@/data/localAiFallback';
 import { callAiMutation } from '@/utils/callAiMutation';
-
-const ADVICE_POOL = [
-  { icon: '🌿', text: '桌面上放一盆薄荷或绿萝，工作前摸三下叶子。这是你今天的微型森林，触叶即安。' },
-  { icon: '🪟', text: '试试把座位挪到窗边，让自然光落在左手边。光是最好的闹钟，也是最温柔的监督员。' },
-  { icon: '🫗', text: '左手边放一杯水，留三分之一不要喝完。让它慢慢蒸发，像一个小小的计时器提醒你休息。' },
-  { icon: '🌅', text: '电脑壁纸换成有天空或树林的照片。每次切屏都像推开一扇窗，深呼吸一次再开始工作。' },
-  { icon: '🕯️', text: '点一支普通蜡烛放在角落，让它自然烧完。火光跳动的时候，人的思绪也会跟着慢下来。' },
-  { icon: '🪨', text: '口袋里放一块路边捡的小石头。今天遇事不决时握住它三秒，沉稳是传染的。' },
-  { icon: '🧭', text: '椅子往吉方偏一点点，不用太正。风水讲究微偏则活，坐下时先深呼吸一次再开工。' },
-  { icon: '🧦', text: '今天穿一双你最喜欢的袜子。舒服从脚开始，气场也是。' },
-  { icon: '🍵', text: '喝一口水含在嘴里数七下再咽。不为什么，只是给自己一个暂停的理由。' },
-  { icon: '🪑', text: '坐下之前用手掌贴一下桌面，掌心朝下停三秒。再忙，也别忘了你和这张桌子是一伙的。' },
-];
 
 export function FunAdvice({
   xi,
@@ -96,17 +84,39 @@ export function FunAdvice({
             }),
           );
         } else {
-          const pool = [...ADVICE_POOL].sort(() => Math.random() - 0.5);
           setSource('local');
           setProvider('none');
-          setAdvices(pool.slice(0, 3));
+          setAdvices(
+            pickLocalFunAdvices({
+              el,
+              xi: xi.xi.map(String),
+              goalLabel,
+              goalKey,
+              cityHint,
+              stem,
+              lat,
+              lng,
+              weatherLabel,
+            }),
+          );
         }
       } catch {
         if (!cancelled) {
-          const pool = [...ADVICE_POOL].sort(() => Math.random() - 0.5);
           setSource('local');
           setProvider('none');
-          setAdvices(pool.slice(0, 3));
+          setAdvices(
+            pickLocalFunAdvices({
+              el,
+              xi: xi.xi.map(String),
+              goalLabel,
+              goalKey,
+              cityHint,
+              stem,
+              lat,
+              lng,
+              weatherLabel,
+            }),
+          );
         }
       }
       if (!cancelled) setLoading(false);
@@ -120,7 +130,7 @@ export function FunAdvice({
     source === 'ai'
       ? `● ${provider === 'kimi' ? 'Kimi' : provider === 'deepseek' ? 'DeepSeek' : provider === 'openai' ? 'OpenAI' : 'AI'} 解读`
       : source === 'local'
-        ? '内置锦囊（接口不可用）'
+        ? '本地锦囊（含坐标·意图）'
         : '…';
 
   return (
