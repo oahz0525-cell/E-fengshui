@@ -1,5 +1,6 @@
 import type { Element } from "@contracts/fengshui";
 import { env } from "./env";
+import { fetchWithTimeout, EXTERNAL_FETCH_MS } from "./fetchTimeout";
 import { haversine } from "./geo";
 import { hash } from "./hash";
 import { GAODE_TYPES } from "./placesData";
@@ -45,7 +46,7 @@ async function fetchGaodePage(
   url.searchParams.set("page", String(page));
   url.searchParams.set("output", "JSON");
 
-  const res = await fetch(url.toString());
+  const res = await fetchWithTimeout(url.toString(), undefined, EXTERNAL_FETCH_MS);
   if (!res.ok) return [];
   const data = (await res.json()) as {
     status?: string;
@@ -85,9 +86,15 @@ export async function fetchGaodeSpotsServer(
     const merged: SpotResult[] = [];
     const seen = new Set<string>();
 
-    for (let page = 1; page <= 3; page++) {
-      const chunk = await fetchGaodePage(lat, lng, element, page);
-      if (!chunk.length) break;
+    const pageChunks = await Promise.all([
+      fetchGaodePage(lat, lng, element, 1),
+      fetchGaodePage(lat, lng, element, 2),
+      fetchGaodePage(lat, lng, element, 3),
+    ]);
+    let pageIdx = 0;
+    for (const chunk of pageChunks) {
+      pageIdx += 1;
+      if (!chunk.length) continue;
       for (const p of chunk) {
         const k = normalizeSpotName(p.name);
         if (seen.has(k)) continue;
@@ -104,7 +111,7 @@ export async function fetchGaodeSpotsServer(
       if (pool.length === 0) continue;
 
       const h = hash(
-        `${lat.toFixed(4)},${lng.toFixed(4)},${new Date().getDate()},${seed},${mode || "any"},r${rollId},p${page}`,
+        `${lat.toFixed(4)},${lng.toFixed(4)},${new Date().getDate()},${seed},${mode || "any"},r${rollId},p${pageIdx}`,
       );
       const pick = pool[h % pool.length];
       if (pick) return { ...pick, fallback };

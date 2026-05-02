@@ -20897,6 +20897,18 @@ function calcResult(el, goal, env2, xi) {
   return { score: Math.round(score), dir, comment, subScores: subs, env: env2, xi };
 }
 
+// server/lib/fetchTimeout.ts
+var EXTERNAL_FETCH_MS = 1e4;
+async function fetchWithTimeout(input, init, ms = EXTERNAL_FETCH_MS) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // server/lib/openMeteo.ts
 function wmoCodeToZh(code) {
   if (code === 0) return "\u6674";
@@ -20921,7 +20933,7 @@ async function fetchOpenMeteoSummary(lat, lng) {
     url2.searchParams.set("daily", "weather_code,precipitation_probability_max,temperature_2m_max,temperature_2m_min");
     url2.searchParams.set("forecast_days", "2");
     url2.searchParams.set("timezone", "auto");
-    const res = await fetch(url2.toString());
+    const res = await fetchWithTimeout(url2.toString(), void 0, EXTERNAL_FETCH_MS);
     if (!res.ok) return null;
     const data = await res.json();
     const cur = data.current;
@@ -21292,11 +21304,39 @@ var aiRouter = createRouter({
 });
 
 // server/lib/nominatim.ts
+async function fetchNominatimReverse(lat, lng) {
+  try {
+    const res = await fetchWithTimeout(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&accept-language=en,zh`,
+      {
+        headers: {
+          "User-Agent": "ElectronicFengshui/1.0 (portfolio demo; local deploy)"
+        }
+      },
+      EXTERNAL_FETCH_MS
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const addr = data.address || {};
+    let name = data.name || addr.city || addr.town || addr.municipality || addr.county || addr.state || "";
+    name = name.split(/[;；]/)[0].trim();
+    let country = addr.country || "";
+    country = country.split(/[;；]/)[0].trim();
+    let display = (data.display_name || name || "").split(/[;；]/)[0].trim();
+    const countryCode = (addr.country_code || "").toUpperCase();
+    if (name && display) {
+      return { name, country, display, countryCode };
+    }
+  } catch {
+  }
+  return null;
+}
 async function fetchPhotonCity(lat, lng) {
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&lang=en`,
-      { headers: { Accept: "application/json" } }
+      { headers: { Accept: "application/json" } },
+      EXTERNAL_FETCH_MS
     );
     if (!res.ok) return null;
     const data = await res.json();
@@ -21313,31 +21353,11 @@ async function fetchPhotonCity(lat, lng) {
   }
 }
 async function fetchCityInfoServer(lat, lng) {
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&accept-language=en,zh`,
-      {
-        headers: {
-          "User-Agent": "ElectronicFengshui/1.0 (portfolio demo; local deploy)"
-        }
-      }
-    );
-    if (res.ok) {
-      const data = await res.json();
-      const addr = data.address || {};
-      let name = data.name || addr.city || addr.town || addr.municipality || addr.county || addr.state || "";
-      name = name.split(/[;；]/)[0].trim();
-      let country = addr.country || "";
-      country = country.split(/[;；]/)[0].trim();
-      let display = (data.display_name || name || "").split(/[;；]/)[0].trim();
-      const countryCode = (addr.country_code || "").toUpperCase();
-      if (name && display) {
-        return { name, country, display, countryCode };
-      }
-    }
-  } catch {
-  }
-  return fetchPhotonCity(lat, lng);
+  const [nom, photon] = await Promise.all([
+    fetchNominatimReverse(lat, lng),
+    fetchPhotonCity(lat, lng)
+  ]);
+  return nom ?? photon ?? null;
 }
 
 // server/lib/geo.ts
@@ -21464,7 +21484,7 @@ async function fetchGaodePage(lat, lng, element, page) {
   url2.searchParams.set("offset", "25");
   url2.searchParams.set("page", String(page));
   url2.searchParams.set("output", "JSON");
-  const res = await fetch(url2.toString());
+  const res = await fetchWithTimeout(url2.toString(), void 0, EXTERNAL_FETCH_MS);
   if (!res.ok) return [];
   const data = await res.json();
   if (data.status !== "1" || !data.pois?.length) return [];
@@ -21485,9 +21505,15 @@ async function fetchGaodeSpotsServer(lat, lng, element, seed, mode, rollId, excl
   try {
     const merged = [];
     const seen = /* @__PURE__ */ new Set();
-    for (let page = 1; page <= 3; page++) {
-      const chunk = await fetchGaodePage(lat, lng, element, page);
-      if (!chunk.length) break;
+    const pageChunks = await Promise.all([
+      fetchGaodePage(lat, lng, element, 1),
+      fetchGaodePage(lat, lng, element, 2),
+      fetchGaodePage(lat, lng, element, 3)
+    ]);
+    let pageIdx = 0;
+    for (const chunk of pageChunks) {
+      pageIdx += 1;
+      if (!chunk.length) continue;
       for (const p of chunk) {
         const k = normalizeSpotName(p.name);
         if (seen.has(k)) continue;
@@ -21502,7 +21528,7 @@ async function fetchGaodeSpotsServer(lat, lng, element, seed, mode, rollId, excl
       }
       if (pool.length === 0) continue;
       const h = hash3(
-        `${lat.toFixed(4)},${lng.toFixed(4)},${(/* @__PURE__ */ new Date()).getDate()},${seed},${mode || "any"},r${rollId},p${page}`
+        `${lat.toFixed(4)},${lng.toFixed(4)},${(/* @__PURE__ */ new Date()).getDate()},${seed},${mode || "any"},r${rollId},p${pageIdx}`
       );
       const pick2 = pool[h % pool.length];
       if (pick2) return { ...pick2, fallback };
@@ -21543,7 +21569,7 @@ function inferOsmType(tags) {
 }
 function buildOverpassQuery(lat, lng, radius) {
   return `
-[out:json][timeout:28];
+[out:json][timeout:12];
 (
   nwr["tourism"](around:${radius},${lat},${lng});
   nwr["leisure"~"park|garden|nature_reserve|pitch"](around:${radius},${lat},${lng});
@@ -21554,48 +21580,67 @@ function buildOverpassQuery(lat, lng, radius) {
 out tags center 150;
 `.trim();
 }
-async function runOverpass(lat0, lng0, query) {
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    try {
-      const res = await fetch(endpoint, {
+function mapOverpassElements(lat0, lng0, data) {
+  const elements = data.elements || [];
+  const mapped = [];
+  for (const el of elements) {
+    const tags = el.tags || {};
+    const name = tags.name || tags["name:en"] || tags["name:zh"];
+    if (!name) continue;
+    const plat = el.lat ?? el.center?.lat;
+    const plng = el.lon ?? el.center?.lon;
+    if (plat == null || plng == null) continue;
+    const distM = Math.round(haversine(lat0, lng0, plat, plng) * 1e3);
+    mapped.push({
+      name,
+      lat: plat,
+      lng: plng,
+      dist: distM,
+      type: inferOsmType(tags)
+    });
+  }
+  return mapped;
+}
+async function fetchOverpassEndpoint(endpoint, lat0, lng0, query) {
+  try {
+    const res = await fetchWithTimeout(
+      endpoint,
+      {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
           "User-Agent": "ElectronicFengshui/1.0 (route-a-osm)"
         },
         body: `data=${encodeURIComponent(query)}`
-      });
-      if (!res.ok) continue;
-      const data = await res.json();
-      const elements = data.elements || [];
-      const mapped = [];
-      for (const el of elements) {
-        const tags = el.tags || {};
-        const name = tags.name || tags["name:en"] || tags["name:zh"];
-        if (!name) continue;
-        const plat = el.lat ?? el.center?.lat;
-        const plng = el.lon ?? el.center?.lon;
-        if (plat == null || plng == null) continue;
-        const distM = Math.round(haversine(lat0, lng0, plat, plng) * 1e3);
-        mapped.push({
-          name,
-          lat: plat,
-          lng: plng,
-          dist: distM,
-          type: inferOsmType(tags)
-        });
-      }
-      if (mapped.length > 0) return mapped;
-    } catch {
-    }
+      },
+      EXTERNAL_FETCH_MS
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const mapped = mapOverpassElements(lat0, lng0, data);
+    return mapped.length > 0 ? mapped : null;
+  } catch {
+    return null;
+  }
+}
+async function runOverpass(lat0, lng0, query) {
+  const results = await Promise.all(
+    OVERPASS_ENDPOINTS.map((endpoint) => fetchOverpassEndpoint(endpoint, lat0, lng0, query))
+  );
+  for (const r of results) {
+    if (r && r.length > 0) return r;
   }
   return null;
 }
 async function fetchOverpassSpotServer(lat0, lng0, mode, seed, rollId, excludeNames = []) {
   const radii = [18e3, 28e3];
-  for (const radius of radii) {
-    const query = buildOverpassQuery(lat0, lng0, radius);
-    const mapped = await runOverpass(lat0, lng0, query);
+  const queries = radii.map((radius) => buildOverpassQuery(lat0, lng0, radius));
+  const mappedList = await Promise.all(
+    queries.map((query) => runOverpass(lat0, lng0, query))
+  );
+  for (let i = 0; i < radii.length; i++) {
+    const radius = radii[i];
+    const mapped = mappedList[i];
     if (!mapped || mapped.length === 0) continue;
     let pool = filterExcluded(filterByMode2(mapped, mode), excludeNames);
     let fallback = false;
@@ -21628,8 +21673,10 @@ function inferWikiType(title) {
 async function fetchWikiSpotsServer(lat, lng, wikiLang, mode, seed, rollId, excludeNames = []) {
   try {
     const lang = WIKI_LANG_MAP[wikiLang] || "en";
-    const res = await fetch(
-      `https://${lang}.wikipedia.org/w/api.php?action=query&list=geosearch&gsradius=25000&gscoord=${lat}|${lng}&gslimit=50&format=json&origin=*`
+    const res = await fetchWithTimeout(
+      `https://${lang}.wikipedia.org/w/api.php?action=query&list=geosearch&gsradius=25000&gscoord=${lat}|${lng}&gslimit=50&format=json&origin=*`,
+      void 0,
+      EXTERNAL_FETCH_MS
     );
     if (!res.ok) throw new Error("Wiki error");
     const data = await res.json();
@@ -21671,14 +21718,16 @@ async function fetchWikiSpotsServer(lat, lng, wikiLang, mode, seed, rollId, excl
 
 // server/lib/nearbySpot.ts
 async function fetchNearbySpotServer(lat, lng, element, wikiLang, mode, seed, rollId, excludeNames = []) {
-  if (isRoughlyMainlandChina(lat, lng)) {
-    const gaode = await fetchGaodeSpotsServer(lat, lng, element, seed, mode, rollId, excludeNames);
-    if (gaode) return gaode;
-  }
   const wikiLangNorm = wikiLang?.trim() || "US";
-  const wiki = await fetchWikiSpotsServer(lat, lng, wikiLangNorm, mode, seed, rollId, excludeNames);
+  const mainland = isRoughlyMainlandChina(lat, lng);
+  const gaodeP = mainland ? fetchGaodeSpotsServer(lat, lng, element, seed, mode, rollId, excludeNames) : Promise.resolve(null);
+  const wikiP = fetchWikiSpotsServer(lat, lng, wikiLangNorm, mode, seed, rollId, excludeNames);
+  const overpassP = fetchOverpassSpotServer(lat, lng, mode, seed, rollId, excludeNames);
+  const [gaode, wiki, overpass] = await Promise.all([gaodeP, wikiP, overpassP]);
+  if (mainland && gaode) return gaode;
   if (wiki) return wiki;
-  return fetchOverpassSpotServer(lat, lng, mode, seed, rollId, excludeNames);
+  if (overpass) return overpass;
+  return null;
 }
 
 // server/routers/geo.ts

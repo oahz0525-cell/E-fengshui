@@ -1,3 +1,4 @@
+import { fetchWithTimeout, EXTERNAL_FETCH_MS } from "./fetchTimeout";
 import { hash } from "./hash";
 import { WIKI_LANG_MAP } from "./placesData";
 import { filterExcluded } from "./spotExclude";
@@ -28,8 +29,10 @@ export async function fetchWikiSpotsServer(
 ): Promise<SpotResult | null> {
   try {
     const lang = WIKI_LANG_MAP[wikiLang] || "en";
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://${lang}.wikipedia.org/w/api.php?action=query&list=geosearch&gsradius=25000&gscoord=${lat}|${lng}&gslimit=50&format=json&origin=*`,
+      undefined,
+      EXTERNAL_FETCH_MS,
     );
     if (!res.ok) throw new Error("Wiki error");
     const data = (await res.json()) as {

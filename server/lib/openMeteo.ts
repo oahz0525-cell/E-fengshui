@@ -1,5 +1,7 @@
 /** 免费开放数据：Open-Meteo，无需 API Key（路线 A） */
 
+import { fetchWithTimeout, EXTERNAL_FETCH_MS } from "./fetchTimeout";
+
 function wmoCodeToZh(code: number): string {
   if (code === 0) return "晴";
   if (code <= 3) return "多云";
@@ -26,7 +28,7 @@ export async function fetchOpenMeteoSummary(lat: number, lng: number): Promise<s
     url.searchParams.set("forecast_days", "2");
     url.searchParams.set("timezone", "auto");
 
-    const res = await fetch(url.toString());
+    const res = await fetchWithTimeout(url.toString(), undefined, EXTERNAL_FETCH_MS);
     if (!res.ok) return null;
     const data = (await res.json()) as {
       current?: {
