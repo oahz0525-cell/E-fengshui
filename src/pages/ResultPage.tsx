@@ -22,6 +22,8 @@ export function ResultPage() {
   const [showDestiny, setShowDestiny] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [minLoadDone, setMinLoadDone] = useState(false);
+  /** API 长时间无响应（既无 data 也无 isError）时结束加载，避免线上永久卡在 LoadingOverlay */
+  const [apiStallBypass, setApiStallBypass] = useState(false);
 
   const destinyQuota = useDestinyQuota();
 
@@ -116,9 +118,48 @@ export function ResultPage() {
     return () => clearTimeout(t);
   }, []);
 
+  useEffect(() => {
+    const t = setTimeout(() => setApiStallBypass(true), 12_000);
+    return () => clearTimeout(t);
+  }, []);
+
+  // API 挂起（既无结果也未标记 error）：超时后用与离线相同的本地推算填满 store
+  useEffect(() => {
+    if (!apiStallBypass || !location || !stem || !goal) return;
+    if (calcQuery.data) return;
+    const environment = genEnv(location, floor);
+    setEnv(environment);
+    setCalcResult(calcResult(element, goal, environment, xiShen));
+  }, [
+    apiStallBypass,
+    calcQuery.data,
+    element,
+    floor,
+    goal,
+    location,
+    setCalcResult,
+    setEnv,
+    stem,
+    xiShen,
+  ]);
+
+  useEffect(() => {
+    if (!apiStallBypass || !location) return;
+    if (weatherQuery.data) return;
+    const cond = divineWeather(location.lat, location.lng);
+    const w = WEATHER[cond] ?? WEATHER.clear;
+    setWeather(`${w.icon} ${w.name} · ${w.desc}`);
+  }, [apiStallBypass, location, setWeather, weatherQuery.data]);
+
   const calcSettled =
-    !location || !stem || !goal || calcQuery.data != null || calcQuery.isError;
-  const wxSettled = !location || weatherQuery.data != null || weatherQuery.isError;
+    !location ||
+    !stem ||
+    !goal ||
+    calcQuery.data != null ||
+    calcQuery.isError ||
+    apiStallBypass;
+  const wxSettled =
+    !location || weatherQuery.data != null || weatherQuery.isError || apiStallBypass;
   if (!calcSettled || !wxSettled || !minLoadDone) return <LoadingOverlay />;
 
   // Use store values (set by local frontend calculation)

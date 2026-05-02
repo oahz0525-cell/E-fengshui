@@ -1,12 +1,25 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export function Atmosphere() {
   const grassRef = useRef<HTMLDivElement>(null);
+  const [lite, setLite] = useState(false);
+
+  useEffect(() => {
+    const prefersReduced =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    const narrow =
+      typeof window !== 'undefined' &&
+      (window.innerWidth < 768 || (navigator.maxTouchPoints ?? 0) > 0);
+    setLite(Boolean(prefersReduced || narrow));
+  }, []);
 
   useEffect(() => {
     const g = grassRef.current;
     if (!g) return;
-    for (let i = 0; i < 30; i++) {
+    g.replaceChildren();
+    const n = lite ? 10 : 30;
+    for (let i = 0; i < n; i++) {
       const e = document.createElement('div');
       const h = 70 + Math.random() * 210;
       const l = -8 + Math.random() * 116;
@@ -21,7 +34,7 @@ export function Atmosphere() {
       e.style.cssText = `position:absolute;bottom:0;left:${l}%;height:${h}px;width:${w}px;border-radius:3px 3px 0 0;transform-origin:bottom center;opacity:${0.12 + Math.random() * 0.28};animation:${an} ${du}s ease-in-out ${de}s infinite;background:linear-gradient(to top,hsl(${hue},${sat}%,${lit}%) 0%,hsl(${hue + 2},${Math.min(28, sat + 6)}%,${lit + 5}%) 55%,transparent 100%);z-index:${Math.floor(1 + Math.random() * 5)};filter:blur(0.3px);`;
       g.appendChild(e);
     }
-  }, []);
+  }, [lite]);
 
   return (
     <>
@@ -42,17 +55,19 @@ export function Atmosphere() {
           animation: 'dappled-drift 18s ease-in-out infinite',
         }}
       />
-      <div
-        className="fixed z-[1] pointer-events-none w-[520px] h-[520px] rounded-full"
-        style={{
-          background:
-            'radial-gradient(circle,rgba(155,165,118,0.06) 0%,rgba(120,130,95,0.03) 32%,rgba(70,75,55,0.015) 58%,transparent 78%)',
-          filter: 'blur(120px)',
-          animation: 'sun-breathe 10s ease-in-out infinite',
-          top: '10%',
-          left: '35%',
-        }}
-      />
+      {!lite && (
+        <div
+          className="fixed z-[1] pointer-events-none w-[520px] h-[520px] rounded-full"
+          style={{
+            background:
+              'radial-gradient(circle,rgba(155,165,118,0.06) 0%,rgba(120,130,95,0.03) 32%,rgba(70,75,55,0.015) 58%,transparent 78%)',
+            filter: 'blur(120px)',
+            animation: 'sun-breathe 10s ease-in-out infinite',
+            top: '10%',
+            left: '35%',
+          }}
+        />
+      )}
     </>
   );
 }
