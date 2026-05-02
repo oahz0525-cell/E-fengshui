@@ -27,7 +27,8 @@ export function ResultPage() {
 
   const destinyQuota = useDestinyQuota();
 
-  const calcQuery = trpc.fengshui.calculate.useQuery(
+  /** 合并原 calculate / weather / forecast，避免 batch 在服务端串行拖满超时 */
+  const pageQuery = trpc.fengshui.pageLoad.useQuery(
     {
       lat: location?.lat ?? 39.9042,
       lng: location?.lng ?? 116.4074,
@@ -37,55 +38,45 @@ export function ResultPage() {
     },
     { enabled: !!location && !!stem && !!goal },
   );
-  const weatherQuery = trpc.fengshui.weather.useQuery(
-    { lat: location?.lat ?? 39.9042, lng: location?.lng ?? 116.4074 },
-    { enabled: !!location },
-  );
-  const forecastQuery = trpc.fengshui.forecast.useQuery(
-    { lat: location?.lat ?? 0, lng: location?.lng ?? 0 },
-    { enabled: !!location },
-  );
   const cityQuery = trpc.geo.cityInfo.useQuery(
     { lat: location?.lat ?? 0, lng: location?.lng ?? 0 },
     { enabled: !!location },
   );
 
   useEffect(() => {
-    if (calcQuery.data) {
-      const d = calcQuery.data;
-      setCalcResult({
-        score: d.score,
-        dir: d.bestDir,
-        comment: d.scoreComment,
-        subScores: d.subScores,
-        env: d.env,
-        xi: d.xiShen,
-      });
-      setEnv(d.env);
-    }
-  }, [calcQuery.data, setCalcResult, setEnv]);
+    const d = pageQuery.data?.calculate;
+    if (!d) return;
+    setCalcResult({
+      score: d.score,
+      dir: d.bestDir,
+      comment: d.scoreComment,
+      subScores: d.subScores,
+      env: d.env,
+      xi: d.xiShen,
+    });
+    setEnv(d.env);
+  }, [pageQuery.data?.calculate, setCalcResult, setEnv]);
 
   useEffect(() => {
-    if (weatherQuery.data) {
-      const w = weatherQuery.data;
-      setWeather(`${w.icon} ${w.name} · ${w.desc}`);
-    }
-  }, [weatherQuery.data, setWeather]);
+    const w = pageQuery.data?.weather;
+    if (!w) return;
+    setWeather(`${w.icon} ${w.name} · ${w.desc}`);
+  }, [pageQuery.data?.weather, setWeather]);
 
   // Offline / API failure: same algorithms as server (`api/engine`), computed locally
   useEffect(() => {
     if (!location || !stem || !goal) return;
-    if (calcQuery.isLoading || calcQuery.isFetching) return;
-    if (calcQuery.data) return;
-    if (!calcQuery.isError) return;
+    if (pageQuery.isLoading || pageQuery.isFetching) return;
+    if (pageQuery.data?.calculate) return;
+    if (!pageQuery.isError) return;
     const environment = genEnv(location, floor);
     setEnv(environment);
     setCalcResult(calcResult(element, goal, environment, xiShen));
   }, [
-    calcQuery.data,
-    calcQuery.isError,
-    calcQuery.isFetching,
-    calcQuery.isLoading,
+    pageQuery.data?.calculate,
+    pageQuery.isError,
+    pageQuery.isFetching,
+    pageQuery.isLoading,
     element,
     floor,
     goal,
@@ -98,19 +89,19 @@ export function ResultPage() {
 
   useEffect(() => {
     if (!location) return;
-    if (weatherQuery.isLoading || weatherQuery.isFetching) return;
-    if (weatherQuery.data) return;
-    if (!weatherQuery.isError) return;
+    if (pageQuery.isLoading || pageQuery.isFetching) return;
+    if (pageQuery.data?.weather) return;
+    if (!pageQuery.isError) return;
     const cond = divineWeather(location.lat, location.lng);
     const w = WEATHER[cond] ?? WEATHER.clear;
     setWeather(`${w.icon} ${w.name} · ${w.desc}`);
   }, [
     location,
     setWeather,
-    weatherQuery.data,
-    weatherQuery.isError,
-    weatherQuery.isFetching,
-    weatherQuery.isLoading,
+    pageQuery.data?.weather,
+    pageQuery.isError,
+    pageQuery.isFetching,
+    pageQuery.isLoading,
   ]);
 
   useEffect(() => {
@@ -126,13 +117,13 @@ export function ResultPage() {
   // API 挂起（既无结果也未标记 error）：超时后用与离线相同的本地推算填满 store
   useEffect(() => {
     if (!apiStallBypass || !location || !stem || !goal) return;
-    if (calcQuery.data) return;
+    if (pageQuery.data?.calculate) return;
     const environment = genEnv(location, floor);
     setEnv(environment);
     setCalcResult(calcResult(element, goal, environment, xiShen));
   }, [
     apiStallBypass,
-    calcQuery.data,
+    pageQuery.data?.calculate,
     element,
     floor,
     goal,
@@ -145,22 +136,20 @@ export function ResultPage() {
 
   useEffect(() => {
     if (!apiStallBypass || !location) return;
-    if (weatherQuery.data) return;
+    if (pageQuery.data?.weather) return;
     const cond = divineWeather(location.lat, location.lng);
     const w = WEATHER[cond] ?? WEATHER.clear;
     setWeather(`${w.icon} ${w.name} · ${w.desc}`);
-  }, [apiStallBypass, location, setWeather, weatherQuery.data]);
+  }, [apiStallBypass, location, setWeather, pageQuery.data?.weather]);
 
-  const calcSettled =
+  const pageBundleSettled =
     !location ||
     !stem ||
     !goal ||
-    calcQuery.data != null ||
-    calcQuery.isError ||
+    pageQuery.data != null ||
+    pageQuery.isError ||
     apiStallBypass;
-  const wxSettled =
-    !location || weatherQuery.data != null || weatherQuery.isError || apiStallBypass;
-  if (!calcSettled || !wxSettled || !minLoadDone) return <LoadingOverlay />;
+  if (!pageBundleSettled || !minLoadDone) return <LoadingOverlay />;
 
   // Use store values (set by local frontend calculation)
   const { score, scoreComment, subScores, bestDir, env } = useAppStore.getState();
@@ -169,7 +158,7 @@ export function ResultPage() {
   const goalKey = (goal || 'creation') as Goal;
   const goalLabel = GOALS[goalKey] ?? GOALS.creation;
   const displayXiShen: XiShen = xiShen || XI_SHEN[displayElement as keyof typeof XI_SHEN] || XI_SHEN['木'];
-  const forecastDetail = forecastQuery.data?.summary ?? '';
+  const forecastDetail = pageQuery.data?.forecast?.summary ?? '';
   const cityHint = cityQuery.data?.display || cityQuery.data?.name || '';
 
   return (

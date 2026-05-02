@@ -6,6 +6,30 @@ import { XI_SHEN, stemToElement, GOALS, WEATHER } from "../engine/data";
 import type { Goal } from "@contracts/fengshui";
 import { fetchOpenMeteoSummary } from "../lib/openMeteo";
 
+function buildCalculateOutput(input: {
+  lat: number;
+  lng: number;
+  floor: number;
+  stem: string;
+  goal: string;
+}) {
+  const el = stemToElement(input.stem);
+  const xi = XI_SHEN[el];
+  const goal = input.goal as Goal;
+  const env = genEnv(input.lat, input.lng, input.floor);
+  const result = calcResult(el, goal, env, xi);
+  return {
+    ...result,
+    element: el,
+    stem: input.stem,
+    goal: GOALS[goal] ?? goal,
+    goalKey: goal,
+    xiShen: xi,
+    bestDir: result.dir,
+    scoreComment: result.comment,
+  };
+}
+
 export const fengshuiRouter = createRouter({
   // 八字排盘
   bazi: publicQuery
@@ -28,24 +52,32 @@ export const fengshuiRouter = createRouter({
       stem: z.string().min(1),
       goal: z.string(),
     }))
-    .query(({ input }) => {
-      const el = stemToElement(input.stem);
-      const xi = XI_SHEN[el];
-      const goal = input.goal as Goal;
+    .query(({ input }) => buildCalculateOutput(input)),
 
-      const env = genEnv(input.lat, input.lng, input.floor);
-      const result = calcResult(el, goal, env, xi);
-
-      return {
-        ...result,
-        element: el,
-        stem: input.stem,
-        goal: GOALS[goal] ?? goal,
-        goalKey: goal,
-        xiShen: xi,
-        bestDir: result.dir,
-        scoreComment: result.comment,
+  /**
+   * 结果页一次请求合并 calculate + weather + forecast，避免 httpBatch 在服务端串行执行导致超时。
+   * 外部异步仅 Open-Meteo；日后若有多路 IO，在 Promise.all 内并行追加即可。
+   */
+  pageLoad: publicQuery
+    .input(
+      z.object({
+        lat: z.number().min(-90).max(90),
+        lng: z.number().min(-180).max(180),
+        floor: z.number().min(1).max(99).default(1),
+        stem: z.string().min(1),
+        goal: z.string(),
+      }),
+    )
+    .query(async ({ input }) => {
+      const calculate = buildCalculateOutput(input);
+      const cond = divineWeather(input.lat, input.lng);
+      const weather = WEATHER[cond] ?? WEATHER.clear;
+      const [summary] = await Promise.all([fetchOpenMeteoSummary(input.lat, input.lng)]);
+      const forecast = {
+        summary: summary ?? "",
+        source: summary ? ("open-meteo" as const) : ("none" as const),
       };
+      return { calculate, weather, forecast };
     }),
 
   // 天气模拟

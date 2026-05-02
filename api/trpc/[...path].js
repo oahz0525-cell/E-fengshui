@@ -20953,6 +20953,23 @@ async function fetchOpenMeteoSummary(lat, lng) {
 }
 
 // server/routers/fengshui.ts
+function buildCalculateOutput(input) {
+  const el = stemToElement(input.stem);
+  const xi = XI_SHEN[el];
+  const goal = input.goal;
+  const env2 = genEnv(input.lat, input.lng, input.floor);
+  const result = calcResult(el, goal, env2, xi);
+  return {
+    ...result,
+    element: el,
+    stem: input.stem,
+    goal: GOALS[goal] ?? goal,
+    goalKey: goal,
+    xiShen: xi,
+    bestDir: result.dir,
+    scoreComment: result.comment
+  };
+}
 var fengshuiRouter = createRouter({
   // 八字排盘
   bazi: publicQuery.input(external_exports.object({
@@ -20970,22 +20987,29 @@ var fengshuiRouter = createRouter({
     floor: external_exports.number().min(1).max(99).default(1),
     stem: external_exports.string().min(1),
     goal: external_exports.string()
-  })).query(({ input }) => {
-    const el = stemToElement(input.stem);
-    const xi = XI_SHEN[el];
-    const goal = input.goal;
-    const env2 = genEnv(input.lat, input.lng, input.floor);
-    const result = calcResult(el, goal, env2, xi);
-    return {
-      ...result,
-      element: el,
-      stem: input.stem,
-      goal: GOALS[goal] ?? goal,
-      goalKey: goal,
-      xiShen: xi,
-      bestDir: result.dir,
-      scoreComment: result.comment
+  })).query(({ input }) => buildCalculateOutput(input)),
+  /**
+   * 结果页一次请求合并 calculate + weather + forecast，避免 httpBatch 在服务端串行执行导致超时。
+   * 外部异步仅 Open-Meteo；日后若有多路 IO，在 Promise.all 内并行追加即可。
+   */
+  pageLoad: publicQuery.input(
+    external_exports.object({
+      lat: external_exports.number().min(-90).max(90),
+      lng: external_exports.number().min(-180).max(180),
+      floor: external_exports.number().min(1).max(99).default(1),
+      stem: external_exports.string().min(1),
+      goal: external_exports.string()
+    })
+  ).query(async ({ input }) => {
+    const calculate = buildCalculateOutput(input);
+    const cond = divineWeather(input.lat, input.lng);
+    const weather = WEATHER[cond] ?? WEATHER.clear;
+    const [summary] = await Promise.all([fetchOpenMeteoSummary(input.lat, input.lng)]);
+    const forecast = {
+      summary: summary ?? "",
+      source: summary ? "open-meteo" : "none"
     };
+    return { calculate, weather, forecast };
   }),
   // 天气模拟
   weather: publicQuery.input(external_exports.object({
@@ -21839,9 +21863,11 @@ if (env.isProduction && process.env.VERCEL !== "1") {
 }
 
 // server/vercel-handle.ts
+var maxDuration = 60;
 var vercel_handle_default = handle(boot_default);
 export {
-  vercel_handle_default as default
+  vercel_handle_default as default,
+  maxDuration
 };
 /*! Bundled license information:
 
