@@ -47,11 +47,6 @@ export function DestinyScroll({
   const [mode, setMode] = useState<DestinyMode | null>(null);
   const [pendingDraw, setPendingDraw] = useState<PendingDraw | null>(null);
 
-  const isSafari =
-    typeof navigator !== 'undefined' &&
-    /Safari/i.test(navigator.userAgent) &&
-    !/Chrome|Chromium|CriOS|Edg|Firefox|FxiOS/i.test(navigator.userAgent);
-
   /** iOS / iPadOS 全系浏览器均为 WebKit，半透明叠层易与页面糊在一起 */
   const isIOSLike =
     typeof navigator !== 'undefined' &&
@@ -196,7 +191,7 @@ export function DestinyScroll({
   return (
     <div
       className={`fixed inset-0 z-[200] flex items-center justify-center p-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] ${
-        isSafari || isIOSLike
+        isIOSLike
           ? 'bg-[#070605]'
           : 'bg-[#09090b]/96 backdrop-blur-xl'
       }`}
@@ -263,7 +258,7 @@ export function DestinyScroll({
 
           {loading && (
             <div className="flex flex-col items-center py-12 px-4">
-              <div className={`${isSafari ? '' : 'destiny-shake'} text-[68px] leading-none mb-5 select-none`} aria-hidden>
+              <div className="destiny-shake text-[68px] leading-none mb-5 select-none [will-change:transform]" aria-hidden>
                 🎋
               </div>
               <p className="text-sm text-[#e8e4dc]/50 tracking-[0.2em]">灵签摇响中…</p>

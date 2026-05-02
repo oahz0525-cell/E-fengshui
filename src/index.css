@@ -164,29 +164,38 @@
   }
 }
 
-/* 寻地抽签：竹签摇筒 */
+/* 寻地抽签：竹签摇筒（含 iOS Safari；GPU 层利于流畅） */
 @keyframes destinyShake {
   0%,
   100% {
-    transform: rotate(-9deg) translateY(0);
+    transform: rotate(-9deg) translate3d(0, 0, 0);
   }
   20% {
-    transform: rotate(10deg) translateY(-6px);
+    transform: rotate(10deg) translate3d(0, -6px, 0);
   }
   40% {
-    transform: rotate(-8deg) translateY(3px);
+    transform: rotate(-8deg) translate3d(0, 3px, 0);
   }
   60% {
-    transform: rotate(9deg) translateY(-4px);
+    transform: rotate(9deg) translate3d(0, -4px, 0);
   }
   80% {
-    transform: rotate(-6deg) translateY(2px);
+    transform: rotate(-6deg) translate3d(0, 2px, 0);
   }
 }
 .destiny-shake {
-  animation: destinyShake 0.48s ease-in-out infinite;
+  animation: destinyShake 0.38s ease-in-out infinite;
   transform-origin: 55% 85%;
   filter: drop-shadow(0 0 12px rgba(180, 160, 100, 0.25));
+  backface-visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .destiny-shake {
+    animation: none;
+    transform: none;
+    filter: none;
+  }
 }
 
 /* ===== SCROLLBAR ===== */
