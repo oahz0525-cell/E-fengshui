@@ -21017,21 +21017,14 @@ var fengshuiRouter = createRouter({
 })();
 
 // server/lib/env.ts
-function required2(name) {
-  const value = process.env[name];
-  if (!value && process.env.NODE_ENV === "production") {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value ?? "";
-}
 function optional2(name) {
   return process.env[name]?.trim() ?? "";
 }
 var env = {
-  appId: required2("APP_ID"),
-  appSecret: required2("APP_SECRET"),
+  appId: optional2("APP_ID"),
+  appSecret: optional2("APP_SECRET"),
   isProduction: process.env.NODE_ENV === "production",
-  databaseUrl: required2("DATABASE_URL"),
+  databaseUrl: optional2("DATABASE_URL"),
   /** Moonshot / Kimi — set on the server only; never exposed to the browser */
   kimiApiKey: optional2("KIMI_API_KEY"),
   /** e.g. kimi-k2-turbo-preview — moonshot-v1-8k 已逐步停用 */
@@ -21040,10 +21033,10 @@ var env = {
   gaodeKey: optional2("GAODE_KEY"),
   /** Google Places key for overseas fallback */
   googleMapsApiKey: optional2("GOOGLE_MAPS_API_KEY"),
-  /** DeepSeek — OpenAI-compatible chat API（官网控制台申请，按量计费） */
-  deepseekApiKey: optional2("DEEPSEEK_API_KEY"),
-  deepseekModel: optional2("DEEPSEEK_MODEL") || "deepseek-chat",
-  deepseekBaseUrl: optional2("DEEPSEEK_BASE_URL") || "https://api.deepseek.com/v1",
+  /** Google Gemini — Kimi 失败时的备选（generativelanguage.googleapis.com） */
+  geminiApiKey: optional2("GEMINI_API_KEY"),
+  /** 默认 gemini-2.0-flash；可通过 GEMINI_MODEL 覆盖 */
+  geminiModel: optional2("GEMINI_MODEL") || "gemini-2.0-flash",
   /** Optional generic LLM fallback when Kimi is unavailable */
   openaiApiKey: optional2("OPENAI_API_KEY"),
   openaiModel: optional2("OPENAI_MODEL") || "gpt-4o-mini",
@@ -21053,8 +21046,11 @@ var env = {
 // server/lib/kimi.ts
 var KIMI_URL = "https://api.moonshot.cn/v1/chat/completions";
 var OPENAI_URL = `${env.openaiBaseUrl.replace(/\/$/, "")}/chat/completions`;
-var DEEPSEEK_URL = `${env.deepseekBaseUrl.replace(/\/$/, "")}/chat/completions`;
-async function chatOnce(model, prompt) {
+var MAX_OUT_FUN_ADVICE = 420;
+var MAX_OUT_PROPHECY = 400;
+var MAX_OUT_SPOT_POEM = 220;
+var MAX_OUT_DEFAULT = 520;
+async function chatOnce(model, prompt, maxTokens) {
   const key = env.kimiApiKey;
   if (!key) return null;
   const res = await fetch(KIMI_URL, {
@@ -21066,35 +21062,36 @@ async function chatOnce(model, prompt) {
     body: JSON.stringify({
       model,
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.8,
-      max_tokens: 900
+      temperature: 0.75,
+      max_tokens: maxTokens
     })
   });
   if (!res.ok) return null;
   const data = await res.json();
   return data.choices?.[0]?.message?.content?.trim() || null;
 }
-async function chatDeepSeekOnce(model, prompt) {
-  const key = env.deepseekApiKey;
+async function chatGeminiOnce(prompt, maxTokens) {
+  const key = env.geminiApiKey;
   if (!key) return null;
-  const res = await fetch(DEEPSEEK_URL, {
+  const model = env.geminiModel.trim() || "gemini-2.0-flash";
+  const url2 = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+  const res = await fetch(url2, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.8,
-      max_tokens: 900
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.75,
+        maxOutputTokens: maxTokens
+      }
     })
   });
   if (!res.ok) return null;
   const data = await res.json();
-  return data.choices?.[0]?.message?.content?.trim() || null;
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  return text || null;
 }
-async function chatOpenAIOnce(model, prompt) {
+async function chatOpenAIOnce(model, prompt, maxTokens) {
   const key = env.openaiApiKey;
   if (!key) return null;
   const res = await fetch(OPENAI_URL, {
@@ -21106,31 +21103,39 @@ async function chatOpenAIOnce(model, prompt) {
     body: JSON.stringify({
       model,
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.8,
-      max_tokens: 900
+      temperature: 0.75,
+      max_tokens: maxTokens
     })
   });
   if (!res.ok) return null;
   const data = await res.json();
   return data.choices?.[0]?.message?.content?.trim() || null;
 }
-async function callLlmWithProvider(prompt) {
+async function callLlmWithProvider(prompt, options) {
+  const maxTokens = Math.min(
+    8192,
+    Math.max(64, options?.maxOutputTokens ?? MAX_OUT_DEFAULT)
+  );
   const primary = env.kimiModel.trim() || "kimi-k2-turbo-preview";
   const fallbacks = ["kimi-k2-turbo-preview", "moonshot-v1-32k", "moonshot-v1-128k"];
   const models = [primary, ...fallbacks.filter((m) => m !== primary)];
   try {
     if (env.kimiApiKey) {
       for (const model of models) {
-        const text = await chatOnce(model, prompt);
+        const text = await chatOnce(model, prompt, maxTokens);
         if (text) return { text, provider: "kimi" };
       }
     }
-    if (env.deepseekApiKey) {
-      const text = await chatDeepSeekOnce(env.deepseekModel.trim() || "deepseek-chat", prompt);
-      if (text) return { text, provider: "deepseek" };
+    if (env.geminiApiKey) {
+      const text = await chatGeminiOnce(prompt, maxTokens);
+      if (text) return { text, provider: "gemini" };
     }
     if (env.openaiApiKey) {
-      const text = await chatOpenAIOnce(env.openaiModel.trim() || "gpt-4o-mini", prompt);
+      const text = await chatOpenAIOnce(
+        env.openaiModel.trim() || "gpt-4o-mini",
+        prompt,
+        maxTokens
+      );
       if (text) return { text, provider: "openai" };
     }
     return { text: null, provider: "none" };
@@ -21151,13 +21156,17 @@ async function generateFunAdviceLines(el, xi, goal, weather, loc, extra) {
 3. \u4E0D\u8981\u76F4\u767D\u5806\u780C\u4E94\u884C\u672F\u8BED\uFF1B\u7ED3\u5408\u5FC3\u7406\u5B66\u4E0E\u6613\u7ECF\u610F\u8C61\u5373\u53EF\u3002
 4. \u6BCF\u6761\u524D\u9762\u52A0\u4E00\u4E2A emoji\uFF0C\u63A7\u5236\u572840\u5B57\u4EE5\u5185\u3002
 \u76F4\u63A5\u8F93\u51FA3\u6761\uFF0C\u6BCF\u6761\u4E00\u884C\uFF0C\u683C\u5F0F\uFF1Aemoji \u5EFA\u8BAE\u5185\u5BB9`;
-  const { text, provider } = await callLlmWithProvider(prompt);
+  const { text, provider } = await callLlmWithProvider(prompt, {
+    maxOutputTokens: MAX_OUT_FUN_ADVICE
+  });
   if (!text) return { lines: null, provider };
   return { lines: text.split("\n").filter((l) => l.trim().length > 5).slice(0, 3), provider };
 }
 async function generateSpotPoemText(spotName, dist, xi) {
   const prompt = `\u4F60\u662F\u4E00\u4F4D\u677E\u5F1B\u611F\u98CE\u6C34\u987E\u95EE\u3002\u7528\u6237\u4ECA\u65E5\u6765\u5230"${spotName}"\uFF0C\u8DDD\u79BB\u7EA6${Math.round(dist)}\u7C73\u3002\u7528\u6237\u516B\u5B57\u559C${xi.join("\u3001")}\u3002\u8BF7\u751F\u6210\u4E00\u6BB540\u5B57\u4EE5\u5185\u7684\u8BD7\u610F\u573A\u666F\u63CF\u8FF0\uFF0C\u4E0D\u8981\u76F4\u767D\u89E3\u91CA\u4E94\u884C\uFF0C\u7528\u753B\u9762\u611F\u548C\u52A8\u4F5C\u611F\uFF0C\u8BED\u6C14\u677E\u5F1B\u81EA\u7136\u50CF\u670B\u53CB\u804A\u5929\u3002`;
-  const { text, provider } = await callLlmWithProvider(prompt);
+  const { text, provider } = await callLlmWithProvider(prompt, {
+    maxOutputTokens: MAX_OUT_SPOT_POEM
+  });
   const poem = text ? text.replace(/^["'`]+|["'`]+$/g, "").trim() : null;
   return { poem, provider };
 }
@@ -21169,7 +21178,9 @@ async function generateProphecyBlock(xi, lat, lng, extra) {
 \u8BF7\u53EA\u8F93\u51FA\u4E00\u6BB5\u5408\u6CD5 JSON\uFF08\u4E0D\u8981 markdown\uFF09\uFF0C\u683C\u5F0F\uFF1A
 {"advice":"\u660E\u65E5\u8FD0\u52BF\u8BED\u6C14\u677E\u5F1B\u7684\u4E00\u6BB5\u4E2D\u658760\u5B57\u5185","dir":"\u4E1C\u6216\u5357\u6216\u897F\u6216\u5317\u6216\u4E1C\u5357\u6216\u4E1C\u5317\u6216\u897F\u5357\u6216\u897F\u5317\u4E4B\u4E00","time":"\u50CF07:00-09:00\u8FD9\u6837\u7684\u65F6\u6BB5","itemName":"\u968F\u8EAB\u5C0F\u7269\u540D\u79F0\u56DB\u5B57\u5185","itemDesc":"\u63CF\u8FF025\u5B57\u5185","itemEmoji":"\u5355\u4E2Aemoji"}
 `;
-  const { text: raw2, provider } = await callLlmWithProvider(prompt);
+  const { text: raw2, provider } = await callLlmWithProvider(prompt, {
+    maxOutputTokens: MAX_OUT_PROPHECY
+  });
   if (!raw2) return { block: null, provider };
   const slice = raw2.match(/\{[\s\S]*\}/);
   if (!slice) return { block: null, provider };
@@ -21807,14 +21818,14 @@ async function createContext(opts) {
 // server/boot.ts
 var app = new Hono2();
 app.use(bodyLimit({ maxSize: 50 * 1024 * 1024 }));
-app.use("/api/trpc/*", async (c) => {
-  return fetchRequestHandler({
-    endpoint: "/api/trpc",
-    req: c.req.raw,
-    router: appRouter,
-    createContext
-  });
+var trpcHandler = async (c) => fetchRequestHandler({
+  endpoint: "/api/trpc",
+  req: c.req.raw,
+  router: appRouter,
+  createContext
 });
+app.all("/api/trpc", trpcHandler);
+app.all("/api/trpc/*", trpcHandler);
 app.all("/api/*", (c) => c.json({ error: "Not Found" }, 404));
 var boot_default = app;
 if (env.isProduction && process.env.VERCEL !== "1") {

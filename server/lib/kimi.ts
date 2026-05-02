@@ -2,7 +2,6 @@ import { env } from "./env";
 
 const KIMI_URL = "https://api.moonshot.cn/v1/chat/completions";
 const OPENAI_URL = `${env.openaiBaseUrl.replace(/\/$/, "")}/chat/completions`;
-const DEEPSEEK_URL = `${env.deepseekBaseUrl.replace(/\/$/, "")}/chat/completions`;
 
 /** Upper bound on completion length per task — smaller = faster generation & lower latency. */
 const MAX_OUT_FUN_ADVICE = 420;
@@ -35,29 +34,28 @@ async function chatOnce(
   return data.choices?.[0]?.message?.content?.trim() || null;
 }
 
-async function chatDeepSeekOnce(
-  model: string,
-  prompt: string,
-  maxTokens: number,
-): Promise<string | null> {
-  const key = env.deepseekApiKey;
+async function chatGeminiOnce(prompt: string, maxTokens: number): Promise<string | null> {
+  const key = env.geminiApiKey;
   if (!key) return null;
-  const res = await fetch(DEEPSEEK_URL, {
+  const model = env.geminiModel.trim() || "gemini-2.0-flash";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+  const res = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.75,
-      max_tokens: maxTokens,
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.75,
+        maxOutputTokens: maxTokens,
+      },
     }),
   });
   if (!res.ok) return null;
-  const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-  return data.choices?.[0]?.message?.content?.trim() || null;
+  const data = (await res.json()) as {
+    candidates?: { content?: { parts?: { text?: string }[] } }[];
+  };
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  return text || null;
 }
 
 async function chatOpenAIOnce(
@@ -90,7 +88,7 @@ export async function callLlm(prompt: string): Promise<string | null> {
   return r.text;
 }
 
-export type LlmProvider = "kimi" | "deepseek" | "openai" | "none";
+export type LlmProvider = "kimi" | "gemini" | "openai" | "none";
 
 export async function callLlmWithProvider(
   prompt: string,
@@ -110,13 +108,9 @@ export async function callLlmWithProvider(
         if (text) return { text, provider: "kimi" };
       }
     }
-    if (env.deepseekApiKey) {
-      const text = await chatDeepSeekOnce(
-        env.deepseekModel.trim() || "deepseek-chat",
-        prompt,
-        maxTokens,
-      );
-      if (text) return { text, provider: "deepseek" };
+    if (env.geminiApiKey) {
+      const text = await chatGeminiOnce(prompt, maxTokens);
+      if (text) return { text, provider: "gemini" };
     }
     if (env.openaiApiKey) {
       const text = await chatOpenAIOnce(

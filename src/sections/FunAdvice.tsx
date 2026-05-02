@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { XiShen, Element } from '@/types';
 import { trpc } from '@/providers/trpc';
 import { SealedSection } from '@/components/SealedSection';
 import {
   AI_CLIENT_TIMEOUT_MS,
+  AI_EXPAND_FALLBACK_MS,
   AI_RETRY_DELAY_MS,
   AI_RETRY_ON_TIMEOUT,
 } from '@/config/aiClient';
@@ -41,10 +42,30 @@ export function FunAdvice({
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [source, setSource] = useState<'ai' | 'local' | null>(null);
-  const [provider, setProvider] = useState<'kimi' | 'deepseek' | 'openai' | 'none'>('none');
+  const [provider, setProvider] = useState<'kimi' | 'gemini' | 'openai' | 'none'>('none');
 
+  const fetchDoneRef = useRef(false);
+  const forcedLocalRef = useRef(false);
+
+  const presetPayload = () =>
+    pickLocalFunAdvices({
+      el,
+      xi: xi.xi.map(String),
+      goalLabel,
+      goalKey,
+      cityHint,
+      stem,
+      lat,
+      lng,
+      weatherLabel,
+    });
+
+  /** 进入结果页即预请求 API；展开后若仍无结果再限时回落（见下方 effect） */
   useEffect(() => {
     let cancelled = false;
+    fetchDoneRef.current = false;
+    forcedLocalRef.current = false;
+
     (async () => {
       setLoading(true);
       try {
@@ -69,9 +90,11 @@ export function FunAdvice({
             retryDelayMs: AI_RETRY_DELAY_MS,
           },
         );
-        if (cancelled) return;
+        if (cancelled || forcedLocalRef.current) return;
+
+        fetchDoneRef.current = true;
         const lines = r.lines;
-        setProvider((r.provider as 'kimi' | 'deepseek' | 'openai' | 'none') || 'none');
+        setProvider((r.provider as 'kimi' | 'gemini' | 'openai' | 'none') || 'none');
         if (lines && lines.length >= 1) {
           setSource('ai');
           setAdvices(
@@ -86,49 +109,40 @@ export function FunAdvice({
         } else {
           setSource('local');
           setProvider('none');
-          setAdvices(
-            pickLocalFunAdvices({
-              el,
-              xi: xi.xi.map(String),
-              goalLabel,
-              goalKey,
-              cityHint,
-              stem,
-              lat,
-              lng,
-              weatherLabel,
-            }),
-          );
+          setAdvices(presetPayload());
         }
       } catch {
-        if (!cancelled) {
-          setSource('local');
-          setProvider('none');
-          setAdvices(
-            pickLocalFunAdvices({
-              el,
-              xi: xi.xi.map(String),
-              goalLabel,
-              goalKey,
-              cityHint,
-              stem,
-              lat,
-              lng,
-              weatherLabel,
-            }),
-          );
-        }
+        if (cancelled || forcedLocalRef.current) return;
+        fetchDoneRef.current = true;
+        setSource('local');
+        setProvider('none');
+        setAdvices(presetPayload());
       }
       if (!cancelled) setLoading(false);
     })();
+
     return () => {
       cancelled = true;
     };
   }, [el, floor, goalKey, goalLabel, lat, lng, cityHint, forecastDetail, mutateAsync, stem, weatherLabel, xi.xi]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const t = window.setTimeout(() => {
+      if (fetchDoneRef.current) return;
+      forcedLocalRef.current = true;
+      fetchDoneRef.current = true;
+      setSource('local');
+      setProvider('none');
+      setAdvices(presetPayload());
+      setLoading(false);
+    }, AI_EXPAND_FALLBACK_MS);
+    return () => window.clearTimeout(t);
+  }, [isOpen, el, floor, goalKey, goalLabel, lat, lng, cityHint, stem, weatherLabel, xi.xi]);
+
   const subtitle =
     source === 'ai'
-      ? `● ${provider === 'kimi' ? 'Kimi' : provider === 'deepseek' ? 'DeepSeek' : provider === 'openai' ? 'OpenAI' : 'AI'} 解读`
+      ? `● ${provider === 'kimi' ? 'Kimi' : provider === 'gemini' ? 'Gemini' : provider === 'openai' ? 'OpenAI' : 'AI'} 解读`
       : source === 'local'
         ? '本地锦囊（含坐标·意图）'
         : '…';

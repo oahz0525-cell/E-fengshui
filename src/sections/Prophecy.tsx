@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { XiShen } from '@/types';
 import { trpc } from '@/providers/trpc';
 import { SealedSection } from '@/components/SealedSection';
 import {
   AI_CLIENT_TIMEOUT_MS,
+  AI_EXPAND_FALLBACK_MS,
   AI_RETRY_DELAY_MS,
   AI_RETRY_ON_TIMEOUT,
 } from '@/config/aiClient';
@@ -31,9 +32,9 @@ export function Prophecy({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const { mutateAsync: fetchProphecy } = trpc.ai.prophecy.useMutation();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [source, setSource] = useState<'ai' | 'local' | null>(null);
-  const [provider, setProvider] = useState<'kimi' | 'deepseek' | 'openai' | 'none'>('none');
+  const [provider, setProvider] = useState<'kimi' | 'gemini' | 'openai' | 'none'>('none');
   const [advice, setAdvice] = useState('');
   const [dir, setDir] = useState('东');
   const [time, setTime] = useState('09:00-11:00');
@@ -41,9 +42,36 @@ export function Prophecy({
   const [itemName, setItemName] = useState('');
   const [itemDesc, setItemDesc] = useState('');
 
+  const fetchDoneRef = useRef(false);
+  const forcedLocalRef = useRef(false);
+
+  const applyPreset = () => {
+    const p = pickLocalProphecy({
+      xi: xi.xi.map(String),
+      lat,
+      lng,
+      stem,
+      floor,
+      goalKey,
+      cityHint,
+      forecastDetail,
+    });
+    setSource('local');
+    setProvider('none');
+    setAdvice(p.advice);
+    setDir(p.dir);
+    setTime(p.time);
+    setItemIcon(p.itemIcon);
+    setItemName(p.itemName);
+    setItemDesc(p.itemDesc);
+  };
+
   /* fetchProphecy 故意不入依赖，避免 trpc mutation 引用变化导致重复请求 */
   useEffect(() => {
     let cancelled = false;
+    fetchDoneRef.current = false;
+    forcedLocalRef.current = false;
+
     (async () => {
       setLoading(true);
       try {
@@ -65,8 +93,10 @@ export function Prophecy({
             retryDelayMs: AI_RETRY_DELAY_MS,
           },
         );
-        if (cancelled) return;
-        setProvider((r.provider as 'kimi' | 'deepseek' | 'openai' | 'none') || 'none');
+        if (cancelled || forcedLocalRef.current) return;
+
+        fetchDoneRef.current = true;
+        setProvider((r.provider as 'kimi' | 'gemini' | 'openai' | 'none') || 'none');
         const b = r.block;
         if (b && b.advice.length >= 8) {
           setSource('ai');
@@ -77,43 +107,36 @@ export function Prophecy({
           setItemName(b.itemName);
           setItemDesc(b.itemDesc);
         } else {
-          applyLocal();
+          applyPreset();
         }
       } catch {
-        if (!cancelled) applyLocal();
+        if (cancelled || forcedLocalRef.current) return;
+        fetchDoneRef.current = true;
+        applyPreset();
       }
       if (!cancelled) setLoading(false);
     })();
-
-    function applyLocal() {
-      const p = pickLocalProphecy({
-        xi: xi.xi.map(String),
-        lat,
-        lng,
-        stem,
-        floor,
-        goalKey,
-        cityHint,
-        forecastDetail,
-      });
-      setSource('local');
-      setProvider('none');
-      setAdvice(p.advice);
-      setDir(p.dir);
-      setTime(p.time);
-      setItemIcon(p.itemIcon);
-      setItemName(p.itemName);
-      setItemDesc(p.itemDesc);
-    }
 
     return () => {
       cancelled = true;
     };
   }, [cityHint, floor, forecastDetail, goalKey, lat, lng, stem, xi.xi.join(',')]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const t = window.setTimeout(() => {
+      if (fetchDoneRef.current) return;
+      forcedLocalRef.current = true;
+      fetchDoneRef.current = true;
+      applyPreset();
+      setLoading(false);
+    }, AI_EXPAND_FALLBACK_MS);
+    return () => window.clearTimeout(t);
+  }, [isOpen, cityHint, floor, forecastDetail, goalKey, lat, lng, stem, xi.xi.join(',')]);
+
   const subtitle =
     source === 'ai'
-      ? `● ${provider === 'kimi' ? 'Kimi' : provider === 'deepseek' ? 'DeepSeek' : provider === 'openai' ? 'OpenAI' : 'AI'} 执笔`
+      ? `● ${provider === 'kimi' ? 'Kimi' : provider === 'gemini' ? 'Gemini' : provider === 'openai' ? 'OpenAI' : 'AI'} 执笔`
       : source === 'local'
         ? '本地预言（含地域·意图）'
         : loading

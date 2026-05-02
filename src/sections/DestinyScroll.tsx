@@ -8,9 +8,9 @@ import { POEM_TEMPLATES } from '@/data/poems';
 import { haversine } from '@/utils/geo';
 import { hash } from '@/utils/hash';
 import {
-  AI_CLIENT_TIMEOUT_MS,
   AI_RETRY_DELAY_MS,
   AI_RETRY_ON_TIMEOUT,
+  AI_SPOT_POEM_CLIENT_MS,
 } from '@/config/aiClient';
 import { callAiMutation } from '@/utils/callAiMutation';
 import type { DestinyMode, Element } from '@/types';
@@ -143,7 +143,7 @@ export function DestinyScroll({
                 xi: xiShen.xi.map(String),
               }),
             {
-              timeoutMs: AI_CLIENT_TIMEOUT_MS,
+              timeoutMs: AI_SPOT_POEM_CLIENT_MS,
               retriesOnTimeout: AI_RETRY_ON_TIMEOUT,
               retryDelayMs: AI_RETRY_DELAY_MS,
             },
