@@ -7,8 +7,8 @@ import { fetchWikiSpotsServer, type DestinyMode } from "./wikiPlaces";
 import type { SpotResult } from "./spotResult";
 
 /**
- * 路线 A：国内高德（可选 Key）→ 维基地理词条 → OSM Overpass。
- * 三路外网 IO 并行发起，按优先级选用结果，避免串行累加超时。
+ * 顺序：① 预制城市（手写 + 内置 OSM JSON，无外网）② 国内高德 ③ 维基 ④ Overpass。
+ * 在有离线数据集的城市优先本地抽签，避免外网超时 / 504。
  */
 export async function fetchNearbySpotServer(
   lat: number,
@@ -21,6 +21,9 @@ export async function fetchNearbySpotServer(
   excludeNames: string[] = [],
   xi?: Element[] | null,
 ): Promise<SpotResult | null> {
+  const offline = pickPresetCitySpot(lat, lng, element, xi ?? null, mode, seed, rollId, excludeNames);
+  if (offline) return offline;
+
   const wikiLangNorm = wikiLang?.trim() || "US";
   const mainland = isRoughlyMainlandChina(lat, lng);
 
@@ -35,5 +38,5 @@ export async function fetchNearbySpotServer(
   if (mainland && gaode) return gaode;
   if (wiki) return wiki;
   if (overpass) return overpass;
-  return pickPresetCitySpot(lat, lng, element, xi ?? null, mode, seed, rollId, excludeNames);
+  return null;
 }

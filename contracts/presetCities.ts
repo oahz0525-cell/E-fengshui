@@ -1,4 +1,5 @@
 import type { Element } from "./fengshui";
+import type { OsmDatasetKey } from "./osmOffline";
 
 /** 城市周边预制景点 — 在线 POI 全失败时的兜底；亦用于 CityDiagnosis 等 UI */
 export interface PresetCitySpot {
@@ -18,6 +19,8 @@ export interface PresetCity {
   el: Element;
   desc: string;
   spots: PresetCitySpot[];
+  /** 可选：合并 `contracts/generated/osm/{key}.json` 中的离线 OSM 景点（构建时从 PBF / Overpass 生成） */
+  osmDataset?: OsmDatasetKey;
 }
 
 export const PRESET_CITIES: PresetCity[] = [
@@ -27,6 +30,7 @@ export const PRESET_CITIES: PresetCity[] = [
     lng: 116.4074,
     radius: 80,
     el: "土",
+    osmDataset: "beijing",
     desc: "土金之气厚重，紫禁城中轴正南北，气场雄浑方正",
     spots: [
       {
@@ -124,6 +128,7 @@ export const PRESET_CITIES: PresetCity[] = [
     lng: 121.4737,
     radius: 80,
     el: "水",
+    osmDataset: "shanghai",
     desc: "东方水都，黄浦江龙脉蜿蜒，水气充盈流通",
     spots: [
       {
@@ -165,6 +170,7 @@ export const PRESET_CITIES: PresetCity[] = [
     lng: -74.006,
     radius: 80,
     el: "金",
+    osmDataset: "new-york",
     desc: "世界金都，摩天如剑，金融脉动，金气最锐",
     spots: [
       {

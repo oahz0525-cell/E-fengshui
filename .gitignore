@@ -34,6 +34,9 @@ data/destiny-quota.json
 *.sqlite
 *.sqlite3
 db/migrations/*.sql
+# OSM PBF build cache (Geofabrik downloads)
+scripts/cache/
+
 # TypeScript cache
 *.tsbuildinfo
 # Build outputs

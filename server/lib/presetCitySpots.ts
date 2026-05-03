@@ -3,7 +3,8 @@ import { PRESET_CITIES } from "@contracts/presetCities";
 import { haversine } from "./geo";
 import { hash } from "./hash";
 import type { DestinyMode } from "./wikiPlaces";
-import { filterExcluded } from "./spotExclude";
+import { OSM_OFFLINE_BY_DATASET } from "./osmOfflineRegistry";
+import { filterExcluded, normalizeSpotName } from "./spotExclude";
 import type { SpotResult } from "./spotResult";
 
 function typeFromElement(el: Element): string {
@@ -26,8 +27,8 @@ function filterByMode(places: SpotResult[], mode: DestinyMode | null): SpotResul
 }
 
 /**
- * 在线高德 / 维基 / Overpass 均无结果时：若用户落在预制城市半径内，
- * 按喜用神 `xi`（若有）筛景点五行，再按寻地之距与哈希抽签。
+ * 若用户落在预制城市半径内：合并手写景点 + `contracts/generated/osm/*.json` 离线 POI，
+ * 按喜用神 `xi`（若有）筛五行，再按寻地之距与哈希抽签（无外网）。
  */
 export function pickPresetCitySpot(
   lat: number,
@@ -55,6 +56,23 @@ export function pickPresetCitySpot(
         type: typeFromElement(s.el),
       };
     });
+
+    const ds = city.osmDataset ? OSM_OFFLINE_BY_DATASET[city.osmDataset] : undefined;
+    if (ds?.pois?.length) {
+      const seen = new Set(mapped.map((p) => normalizeSpotName(p.name)));
+      for (const p of ds.pois) {
+        const k = normalizeSpotName(p.name);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        mapped.push({
+          name: p.name,
+          lat: p.lat,
+          lng: p.lng,
+          dist: Math.round(haversine(lat, lng, p.lat, p.lng) * 1000),
+          type: typeFromElement(p.el),
+        });
+      }
+    }
 
     if (xiSet) {
       const byXi = mapped.filter((p) => {

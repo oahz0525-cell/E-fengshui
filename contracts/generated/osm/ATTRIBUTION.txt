@@ -1,0 +1,3 @@
+内含地点数据 © OpenStreetMap 贡献者，使用 ODbL 授权。
+Built-in POI datasets derived from OpenStreetMap — © OpenStreetMap contributors, ODbL.
+详情见：https://www.openstreetmap.org/copyright
