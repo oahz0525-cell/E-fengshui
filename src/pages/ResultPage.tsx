@@ -15,6 +15,7 @@ import { SettingsPanel } from '@/components/SettingsPanel';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { DIRS, GOALS } from '@/data/elements';
 import { useDestinyQuota } from '@/hooks/useDestinyQuota';
+import { RESULT_PAGE_API_STALL_MS } from '@/config/clientTiming';
 
 export function ResultPage() {
   const { location, element, stem, xiShen, goal, floor, setCalcResult, setWeather, setEnv } = useAppStore();
@@ -105,12 +106,12 @@ export function ResultPage() {
   ]);
 
   useEffect(() => {
-    const t = setTimeout(() => setMinLoadDone(true), 2000);
+    const t = setTimeout(() => setMinLoadDone(true), 800);
     return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => setApiStallBypass(true), 12_000);
+    const t = setTimeout(() => setApiStallBypass(true), RESULT_PAGE_API_STALL_MS);
     return () => clearTimeout(t);
   }, []);
 

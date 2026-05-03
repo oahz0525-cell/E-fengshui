@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { TRPCClientError } from '@trpc/client';
 import { useAppStore } from '@/stores/useAppStore';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { trpc } from '@/providers/trpc';
@@ -7,12 +6,8 @@ import { DISTANCE_BUCKETS } from '@/data/elements';
 import { POEM_TEMPLATES } from '@/data/poems';
 import { haversine } from '@/utils/geo';
 import { hash } from '@/utils/hash';
-import {
-  AI_RETRY_DELAY_MS,
-  AI_RETRY_ON_TIMEOUT,
-  AI_SPOT_POEM_CLIENT_MS,
-} from '@/config/aiClient';
-import { callAiMutation } from '@/utils/callAiMutation';
+import { withTimeout } from '@/utils/withTimeout';
+import { DESTINY_DRAW_TOTAL_MS, NEARBY_SPOT_API_CONNECT_MS } from '@/config/clientTiming';
 import type { DestinyMode, Element } from '@/types';
 import type { DestinyLogItem } from '@/hooks/useDestinyQuota';
 import { PRESET_CITIES } from '@contracts/presetCities';
@@ -117,116 +112,112 @@ export function DestinyScroll({
     const xiAllowed = new Set<Element>(['木', '火', '土', '金', '水']);
     const xiPayload = (xiShen.xi ?? []).filter((x): x is Element => xiAllowed.has(x as Element));
 
-    const buildPoem = async (s: {
+    const started = Date.now();
+
+    type SpotShape = {
       name: string;
       lat: number;
       lng: number;
       dist?: number;
       type?: string;
-    }): Promise<{ poem: string; dist: number }> => {
-      let poem: string | null = null;
-      if (aiPoem) {
-        try {
-          const pr = await callAiMutation(
-            () =>
-              poemMut.mutateAsync({
-                spotName: s.name,
-                dist: s.dist || 0,
-                xi: xiShen.xi.map(String),
-              }),
-            {
-              timeoutMs: AI_SPOT_POEM_CLIENT_MS,
-              retriesOnTimeout: AI_RETRY_ON_TIMEOUT,
-              retryDelayMs: AI_RETRY_DELAY_MS,
-            },
-          );
-          poem = pr.poem;
-        } catch {
-          poem = null;
-        }
-      }
-      if (!poem) {
-        const type = (s.type || 'default') as keyof typeof POEM_TEMPLATES;
-        const xiEl = (xiShen.xi[0] || '木') as keyof (typeof POEM_TEMPLATES)['default'];
-        const pool = POEM_TEMPLATES[type]?.[xiEl] || POEM_TEMPLATES['default'][xiEl] || POEM_TEMPLATES['default']['木'];
-        const idx = hash(`${s.name}|${xiEl}|${rollId}|${seed}`) % pool.length;
-        poem = pool[idx];
-      }
-      const dist = s.dist ?? Math.round(haversine(location.lat, location.lng, s.lat, s.lng) * 1000);
-      return { poem: poem || '', dist };
+      fallback?: boolean;
+    };
+
+    const templatePoemFor = (sv: SpotShape): string => {
+      const t = (sv.type || 'default') as keyof typeof POEM_TEMPLATES;
+      const xiEl = (xiShen.xi[0] || '木') as keyof (typeof POEM_TEMPLATES)['default'];
+      const pool =
+        POEM_TEMPLATES[t]?.[xiEl] || POEM_TEMPLATES['default'][xiEl] || POEM_TEMPLATES['default']['木'];
+      const idx = hash(`${sv.name}|${xiEl}|${rollId}|${seed}`) % pool.length;
+      return pool[idx];
     };
 
     try {
-      const { spot: s } = await nearbyMut.mutateAsync({
-        lat: location.lat,
-        lng: location.lng,
-        element: element as Element,
-        wikiLang: wikiLang?.trim() || 'US',
-        mode,
-        seed,
-        rollId,
-        excludeNames,
-        xi: xiPayload,
-      });
-      if (!s) {
+      let spot: SpotShape | null = null;
+      let apiReturnedSpot = false;
+
+      try {
+        const res = await withTimeout(
+          nearbyMut.mutateAsync({
+            lat: location.lat,
+            lng: location.lng,
+            element: element as Element,
+            wikiLang: wikiLang?.trim() || 'US',
+            mode,
+            seed,
+            rollId,
+            excludeNames,
+            xi: xiPayload,
+          }),
+          NEARBY_SPOT_API_CONNECT_MS,
+        );
+        if (res.spot) {
+          spot = res.spot;
+          apiReturnedSpot = true;
+        }
+      } catch {
+        /* 逾时或网络/HTML 解析失败 */
+      }
+
+      if (!spot) {
+        const local = pickPresetCitySpotCore(
+          location.lat,
+          location.lng,
+          element as Element,
+          xiPayload.length ? xiPayload : null,
+          mode,
+          seed,
+          rollId,
+          excludeNames,
+          PRESET_CITIES,
+          undefined,
+        );
+        if (local) spot = local;
+      }
+
+      if (!spot) {
         setDrawError(
-          '附近暂未匹配到 OSM 地图上的具名地点（维基与 OpenStreetMap 暂无可用结果，或已被排除）。可换一个「寻地之距」或稍后再试。',
+          '附近暂未匹配到可用地点（云端 3 秒内无响应或无可抽签结果）。可换一个「寻地之距」或稍后再试。',
         );
         return;
       }
-      const { poem, dist } = await buildPoem(s);
+
+      const dist =
+        spot.dist ?? Math.round(haversine(location.lat, location.lng, spot.lat, spot.lng) * 1000);
+      const elapsed = Date.now() - started;
+      const budgetLeft = DESTINY_DRAW_TOTAL_MS - elapsed;
+
+      let poemOut: string;
+      if (budgetLeft <= 0) {
+        poemOut = templatePoemFor(spot);
+      } else if (aiPoem && budgetLeft > 400) {
+        const aiMs = Math.min(budgetLeft - 80, 2000);
+        try {
+          const pr = await withTimeout(
+            poemMut.mutateAsync({
+              spotName: spot.name,
+              dist: spot.dist ?? dist,
+              xi: xiShen.xi.map(String),
+            }),
+            Math.max(250, aiMs),
+          );
+          poemOut = (pr.poem && String(pr.poem).trim()) || '';
+        } catch {
+          poemOut = '';
+        }
+        if (!poemOut) poemOut = templatePoemFor(spot);
+      } else {
+        poemOut = templatePoemFor(spot);
+      }
+
       setPendingDraw({
         mode,
-        name: s.name,
-        poem,
+        name: spot.name,
+        poem: poemOut,
         dist,
-        fallback: s.fallback,
-        offlineApiFallback: false,
+        fallback: spot.fallback,
+        offlineApiFallback: !apiReturnedSpot,
       });
-    } catch (e) {
-      const local = pickPresetCitySpotCore(
-        location.lat,
-        location.lng,
-        element as Element,
-        xiPayload.length ? xiPayload : null,
-        mode,
-        seed,
-        rollId,
-        excludeNames,
-        PRESET_CITIES,
-        undefined,
-      );
-      if (local) {
-        const { poem, dist } = await buildPoem(local);
-        setPendingDraw({
-          mode,
-          name: local.name,
-          poem,
-          dist,
-          fallback: local.fallback,
-          offlineApiFallback: true,
-        });
-        return;
-      }
-      const raw =
-        e instanceof TRPCClientError
-          ? e.message
-          : e instanceof Error
-            ? e.message
-            : '';
-      const hint =
-        raw.includes('Unexpected token') || raw.includes('<!DOCTYPE')
-          ? '（接口返回了网页而非数据：多为 Vercel 路由或 API 未生效。）'
-          : /expected pattern|did not match/i.test(raw)
-            ? '（常见于 Safari：多为接口未返回 JSON，请确认 /api/trpc 部署；或与输入校验失败有关，已自动过滤非法字段后请重试。）'
-            : raw.includes('Failed to fetch') || raw.includes('NetworkError')
-              ? '（网络未连通或请求被拦截。）'
-              : '';
-      setDrawError(
-        raw
-          ? `${raw}${hint}`
-          : '请求失败（请检查网络或稍后重试）。若部署在 Vercel，请在环境变量中设置 NODEJS_HELPERS=0。'.trim(),
-      );
     } finally {
       setLoading(false);
     }
@@ -322,7 +313,7 @@ export function DestinyScroll({
               <div className="text-sm leading-[2] text-[#e8e4dc]/60 text-center italic">{pendingDraw.poem}</div>
               {pendingDraw.offlineApiFallback && (
                 <div className="text-center text-[11px] text-amber-200/55 mt-1.5 px-2 leading-relaxed">
-                  云端接口不可用，已改用本页内置城市手写景点；修复 /api/trpc 后可使用完整离线 OSM 库与在线高德。
+                  云端 3 秒内未返回有效地点，已改用本页内置城市手写景点（完整离线库依赖服务端）。
                 </div>
               )}
               {pendingDraw.fallback && (
