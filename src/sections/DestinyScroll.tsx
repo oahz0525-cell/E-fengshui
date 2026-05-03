@@ -120,6 +120,7 @@ export function DestinyScroll({
         seed,
         rollId,
         excludeNames,
+        xi: xiShen.xi as Element[],
       });
       if (!s) {
         setDrawError(

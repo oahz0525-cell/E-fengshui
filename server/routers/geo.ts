@@ -33,6 +33,8 @@ export const geoRouter = createRouter({
         rollId: z.number().int().default(0),
         /** 今日已抽过的地点名，换签时排除重复 */
         excludeNames: z.array(z.string().max(200)).max(50).optional().default([]),
+        /** 喜用神五行 — 预制库兜底时优先匹配景点 `el` */
+        xi: z.array(elementSchema).optional(),
       }),
     )
     .mutation(async ({ input }) => {
@@ -45,6 +47,7 @@ export const geoRouter = createRouter({
         input.seed,
         input.rollId,
         input.excludeNames ?? [],
+        input.xi as Element[] | undefined,
       );
       return { spot };
     }),

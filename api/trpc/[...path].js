@@ -21111,21 +21111,30 @@ async function chatGeminiOnce(prompt, maxTokens) {
   if (!key) return null;
   const model = env.geminiModel.trim() || "gemini-2.0-flash";
   const url2 = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
-  const res = await fetch(url2, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.75,
-        maxOutputTokens: maxTokens
-      }
-    })
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-  return text || null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15e3);
+  try {
+    const res = await fetch(url2, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.75,
+          maxOutputTokens: maxTokens
+        }
+      })
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    return text || null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 async function chatOpenAIOnce(model, prompt, maxTokens) {
   const key = env.openaiApiKey;
@@ -21658,6 +21667,337 @@ async function fetchOverpassSpotServer(lat0, lng0, mode, seed, rollId, excludeNa
   return null;
 }
 
+// contracts/presetCities.ts
+var PRESET_CITIES = [
+  {
+    name: "\u5317\u4EAC",
+    lat: 39.9042,
+    lng: 116.4074,
+    radius: 80,
+    el: "\u571F",
+    desc: "\u571F\u91D1\u4E4B\u6C14\u539A\u91CD\uFF0C\u7D2B\u7981\u57CE\u4E2D\u8F74\u6B63\u5357\u5317\uFF0C\u6C14\u573A\u96C4\u6D51\u65B9\u6B63",
+    spots: [
+      {
+        name: "\u666F\u5C71\u516C\u56ED\u4E07\u6625\u4EAD",
+        lat: 39.9244,
+        lng: 116.3971,
+        el: "\u571F",
+        poem: "\u5411\u5317\u671B\uFF0C\u5168\u57CE\u5728\u4F60\u811A\u4E0B\u94FA\u5C55\u3002\u7AD9\u5728\u8FD9\u91CC\uFF0C\u571F\u6C14\u6700\u539A\uFF0C\u9002\u5408\u7406\u6E05\u5934\u7EEA\u3001\u505A\u51B3\u5B9A\u3002"
+      },
+      {
+        name: "\u4EC0\u5239\u6D77\u94F6\u952D\u6865",
+        lat: 39.9389,
+        lng: 116.3833,
+        el: "\u6C34",
+        poem: "\u6C34\u8FB9\u5915\u9633\u897F\u4E0B\uFF0C\u6A79\u58F0\u6447\u788E\u4E00\u6E56\u91D1\u3002\u559C\u6C34\u4E4B\u4EBA\u5750\u6B64\uFF0C\u770B\u6C34\u6CE2\u4E0D\u5174\uFF0C\u5FC3\u4E8B\u81EA\u5E73\u3002"
+      },
+      {
+        name: "\u56FD\u5BB6\u690D\u7269\u56ED\u5317\u56ED",
+        lat: 40.0028,
+        lng: 116.2075,
+        el: "\u6728",
+        poem: "\u5411\u897F\u5317\u884C\uFF0C\u6797\u6728\u6DF1\u5904\u6709\u5E7D\u5F84\u3002\u6728\u6C14\u751F\u53D1\u4E4B\u5730\uFF0C\u9002\u5408\u5E26\u7740\u95EE\u9898\u53BB\uFF0C\u8BA9\u7B54\u6848\u5728\u679D\u53F6\u95F4\u81EA\u5DF1\u843D\u4E0B\u3002"
+      },
+      {
+        name: "\u6CD5\u6E90\u5BFA",
+        lat: 39.8864,
+        lng: 116.3714,
+        el: "\u91D1",
+        poem: "\u5357\u57CE\u53E4\u5BFA\uFF0C\u949F\u58F0\u6E05\u8FDC\u3002\u91D1\u6C14\u8083\u6740\u4E4B\u5730\u53CD\u800C\u6700\u9002\u5408\u653E\u4E0B\u6267\u5FF5\uFF0C\u5728\u9999\u706B\u7A00\u8584\u5904\u542C\u89C1\u81EA\u5DF1\u7684\u58F0\u97F3\u3002"
+      },
+      {
+        name: "\u5929\u575B\u516C\u56ED\u7948\u5E74\u6BBF",
+        lat: 39.8823,
+        lng: 116.4066,
+        el: "\u6728",
+        poem: "\u796D\u5929\u4E4B\u6240\uFF0C\u6728\u5FB7\u53C2\u5929\u3002\u73AF\u5ECA\u6162\u884C\uFF0C\u8BA9\u5FC3\u613F\u987A\u7740\u67CF\u6811\u7684\u5F71\u5B50\u5F80\u4E0A\u957F\u3002"
+      },
+      {
+        name: "\u9890\u548C\u56ED\u6606\u660E\u6E56\u4E1C\u5824",
+        lat: 39.9997,
+        lng: 116.2752,
+        el: "\u6C34",
+        poem: "\u6E56\u98CE\u8FCE\u9762\uFF0C\u957F\u5824\u5982\u6C34\u8896\u3002\u559C\u6C34\u8005\u5728\u6B64\uFF0C\u5B9C\u653E\u7A7A\u601D\u7EEA\uFF0C\u8BA9\u6CE2\u7EB9\u66FF\u4F60\u6392\u5E8F\u3002"
+      },
+      {
+        name: "\u5317\u6D77\u516C\u56ED\u767D\u5854",
+        lat: 39.9259,
+        lng: 116.3888,
+        el: "\u571F",
+        poem: "\u743C\u5C9B\u6625\u9634\uFF0C\u5854\u5F71\u5165\u6E56\u3002\u571F\u6C14\u7A33\u91CD\uFF0C\u9002\u5408\u628A\u7EA0\u7ED3\u6C89\u6DC0\u6210\u4E00\u53E5\u6E05\u6670\u7684\u8BDD\u3002"
+      },
+      {
+        name: "\u56FD\u5B50\u76D1\u8857\u5B54\u5E99",
+        lat: 39.9474,
+        lng: 116.4166,
+        el: "\u91D1",
+        poem: "\u7891\u6797\u4E0E\u53E4\u67CF\uFF0C\u91D1\u58F0\u7389\u632F\u3002\u5B9C\u9759\u5FC3\u8BFB\u4E66\u5F0F\u6563\u6B65\uFF0C\u628A\u6742\u5FF5\u7559\u5728\u6731\u95E8\u5916\u3002"
+      },
+      {
+        name: "798\u827A\u672F\u533A",
+        lat: 39.9844,
+        lng: 116.4976,
+        el: "\u706B",
+        poem: "\u65E7\u5382\u623F\u91CC\u7684\u706B\u65FA\u521B\u610F\u3002\u8272\u5F69\u4E0E\u710A\u75D5\u5E76\u5B58\uFF0C\u9002\u5408\u70B9\u71C3\u4E00\u4EF6\u62D6\u5EF6\u5DF2\u4E45\u7684\u5C0F\u4E8B\u3002"
+      },
+      {
+        name: "\u5965\u6797\u5339\u514B\u68EE\u6797\u516C\u56ED\u5357\u56ED",
+        lat: 40.016,
+        lng: 116.3915,
+        el: "\u6728",
+        poem: "\u57CE\u5E02\u4E2D\u8F74\u5317\u7AEF\u7684\u7EFF\u80BA\uFF0C\u8DD1\u9053\u4E0E\u6797\u836B\u5E76\u884C\u3002\u6728\u6C14\u6D41\u52A8\uFF0C\u5B9C\u5FEB\u8D70\u4E00\u5708\u7406\u6E05\u5934\u7EEA\u3002"
+      },
+      {
+        name: "\u9996\u94A2\u56ED\u79C0\u6C60",
+        lat: 39.9156,
+        lng: 116.1608,
+        el: "\u91D1",
+        poem: "\u9AD8\u7089\u4E0E\u6C34\u9762\u540C\u6846\uFF0C\u5DE5\u4E1A\u9AA8\u9ABC\u91CC\u7684\u9759\u6C34\u3002\u91D1\u6C34\u5E73\u8861\uFF0C\u9002\u5408\u544A\u522B\u4E00\u6BB5\u65E7\u53D9\u4E8B\u3002"
+      },
+      {
+        name: "\u901A\u5DDE\u5927\u8FD0\u6CB3\u68EE\u6797\u516C\u56ED",
+        lat: 39.9026,
+        lng: 116.7186,
+        el: "\u6C34",
+        poem: "\u8FD0\u6CB3\u6C34\u8109\u5411\u4E1C\uFF0C\u4E24\u5CB8\u5F00\u9614\u3002\u6C34\u6C14\u7EF5\u957F\uFF0C\u9002\u5408\u6162\u9A91\u6216\u4E45\u5750\u770B\u8239\u6765\u8239\u5F80\u3002"
+      }
+    ]
+  },
+  {
+    name: "\u4E0A\u6D77",
+    lat: 31.2304,
+    lng: 121.4737,
+    radius: 80,
+    el: "\u6C34",
+    desc: "\u4E1C\u65B9\u6C34\u90FD\uFF0C\u9EC4\u6D66\u6C5F\u9F99\u8109\u873F\u8712\uFF0C\u6C34\u6C14\u5145\u76C8\u6D41\u901A",
+    spots: [
+      {
+        name: "\u5916\u6EE9\u6E90\u5706\u660E\u56ED\u8DEF",
+        lat: 31.2436,
+        lng: 121.4872,
+        el: "\u91D1",
+        poem: "\u4E07\u56FD\u5EFA\u7B51\u7684\u77F3\u5934\u7F1D\u91CC\uFF0C\u91D1\u6C14\u6C89\u4E86\u767E\u5E74\u3002\u6E05\u6668\u53BB\uFF0C\u6CA1\u4EBA\u7684\u65F6\u5019\uFF0C\u90A3\u4E9B\u77F3\u5934\u4F1A\u8DDF\u4F60\u8BF4\u8BDD\u3002"
+      },
+      {
+        name: "\u5F90\u6C47\u6EE8\u6C5F\u6CB9\u7F50\u827A\u672F\u4E2D\u5FC3",
+        lat: 31.1874,
+        lng: 121.4626,
+        el: "\u706B",
+        poem: "\u65E7\u5DE5\u4E1A\u7684\u706B\u6C14\u672A\u6563\uFF0C\u88AB\u6539\u9020\u6210\u4E86\u827A\u672F\u7684\u5F62\u72B6\u3002\u559C\u706B\u4E4B\u4EBA\u6765\u6B64\uFF0C\u65E7\u706B\u65B0\u71C3\uFF0C\u521B\u610F\u81EA\u751F\u3002"
+      },
+      {
+        name: "\u5171\u9752\u68EE\u6797\u516C\u56ED",
+        lat: 31.3246,
+        lng: 121.5551,
+        el: "\u6728",
+        poem: "\u4E1C\u5317\u65B9\u5411\uFF0C\u6749\u6797\u8302\u5BC6\u5982\u7EFF\u8272\u96A7\u9053\u3002\u6728\u6C14\u6700\u76DB\uFF0C\u9002\u5408\u8FF7\u8DEF\u2014\u2014\u6709\u65F6\u5019\u627E\u4E0D\u5230\u65B9\u5411\u624D\u662F\u627E\u5230\u65B9\u5411\u7684\u5F00\u59CB\u3002"
+      },
+      {
+        name: "\u82CF\u5DDE\u6CB3\u660C\u5E73\u8DEF\u6865",
+        lat: 31.2431,
+        lng: 121.4517,
+        el: "\u6C34",
+        poem: "\u8DE8\u5728\u6C34\u4E0A\uFF0C\u770B\u8239\u6765\u8239\u5F80\u3002\u6C34\u6C14\u6D41\u52A8\u4E4B\u5730\uFF0C\u4E0D\u805A\u8D22\u4F46\u805A\u4EBA\uFF0C\u9002\u5408\u7EA6\u4E86\u91CD\u8981\u7684\u4EBA\u6563\u6B65\u3002"
+      }
+    ]
+  },
+  {
+    name: "\u7EBD\u7EA6",
+    lat: 40.7128,
+    lng: -74.006,
+    radius: 80,
+    el: "\u91D1",
+    desc: "\u4E16\u754C\u91D1\u90FD\uFF0C\u6469\u5929\u5982\u5251\uFF0C\u91D1\u878D\u8109\u52A8\uFF0C\u91D1\u6C14\u6700\u9510",
+    spots: [
+      {
+        name: "High Line",
+        lat: 40.748,
+        lng: -74.0048,
+        el: "\u6728",
+        poem: "\u5E9F\u5F03\u94C1\u8DEF\u6539\u5EFA\u7684\u7A7A\u4E2D\u82B1\u56ED\uFF0C\u6728\u6C14\u4ECE\u6C34\u6CE5\u7F1D\u91CC\u957F\u51FA\u6765\u3002\u9002\u5408\u8D70\u5B8C\u5168\u7A0B\uFF0C\u8BA9\u57CE\u5E02\u7684\u566A\u97F3\u53D8\u6210\u80CC\u666F\u3002"
+      },
+      {
+        name: "Central Park Sheep Meadow",
+        lat: 40.7717,
+        lng: -73.9748,
+        el: "\u571F",
+        poem: "\u66FC\u54C8\u987F\u4E2D\u5FC3\u7684\u571F\uFF0C\u662F\u5168\u57CE\u6700\u73CD\u8D35\u7684\u4E00\u7247\u8E0F\u5B9E\u3002\u8EBA\u4E0B\u6765\uFF0C\u770B\u6469\u5929\u5927\u697C\u56F4\u6210\u7684\u4E00\u5C0F\u65B9\u5757\u5929\u3002"
+      },
+      {
+        name: "Brooklyn Bridge Walkway",
+        lat: 40.7061,
+        lng: -73.9969,
+        el: "\u91D1",
+        poem: "\u94A2\u7684\u7434\u5F26\uFF0C\u8FDE\u63A5\u4E24\u4E2A\u4E16\u754C\u3002\u8D70\u5230\u6865\u4E2D\u95F4\uFF0C\u91D1\u6C14\u6700\u9510\uFF0C\u9002\u5408\u505A\u4E00\u4E2A\u51B3\u5B9A\u2014\u2014\u5230\u4E86\u5BF9\u5CB8\u5C31\u662F\u65B0\u7684\u5F00\u59CB\u3002"
+      },
+      {
+        name: "DUMBO Art District",
+        lat: 40.7033,
+        lng: -73.9881,
+        el: "\u6C34",
+        poem: "\u5E03\u9C81\u514B\u6797\u6865\u4E0B\u7684\u6C34\u5CB8\uFF0C\u6C34\u6C14\u6620\u7740\u66FC\u54C8\u987F\u7684\u5929\u9645\u7EBF\u3002\u9002\u5408\u9EC4\u660F\u53BB\uFF0C\u8BA9\u6C34\u628A\u4E00\u5929\u7684\u7D27\u5F20\u51B2\u8D70\u3002"
+      },
+      {
+        name: "Washington Square Park",
+        lat: 40.7308,
+        lng: -73.9973,
+        el: "\u706B",
+        poem: "\u62F1\u95E8\u4E0B\u7684\u8857\u5934\u4E0E\u5B66\u672F\u4EA4\u754C\uFF0C\u706B\u6C14\u4EBA\u60C5\u5E76\u5B58\u3002\u9002\u5408\u89C2\u5BDF\u4EBA\u7FA4\uFF0C\u518D\u51B3\u5B9A\u81EA\u5DF1\u7684\u4E0B\u4E00\u6B65\u3002"
+      },
+      {
+        name: "The Met Fifth Avenue",
+        lat: 40.7794,
+        lng: -73.9632,
+        el: "\u91D1",
+        poem: "\u535A\u7269\u9986\u7684\u91D1\u6C14\u4E0D\u55A7\u54D7\u3002\u6311\u4E00\u4EF6\u5C55\u54C1\u5BF9\u89C6\uFF0C\u50CF\u4E0E\u53E6\u4E00\u4E2A\u65F6\u7A7A\u7684\u81EA\u5DF1\u6253\u62DB\u547C\u3002"
+      },
+      {
+        name: "Bryant Park",
+        lat: 40.7536,
+        lng: -73.9832,
+        el: "\u6728",
+        poem: "\u56FE\u4E66\u9986\u80CC\u540E\u7684\u7EFF\u6D32\uFF0C\u6728\u6C14\u4ECE\u8349\u576A\u7F1D\u9699\u6D6E\u4E0A\u6765\u3002\u9002\u5408\u5348\u4F11\u5341\u5206\u949F\uFF0C\u628A\u65E5\u7A0B\u5FD8\u6389\u4E00\u534A\u3002"
+      },
+      {
+        name: "Prospect Park Long Meadow",
+        lat: 40.6602,
+        lng: -73.969,
+        el: "\u571F",
+        poem: "\u5E03\u9C81\u514B\u6797\u7684\u8179\u5730\u8349\u573A\uFF0C\u571F\u6C14\u539A\u5B9E\u3002\u9002\u5408\u8EBA\u5E73\u671B\u5929\uFF0C\u8BA9\u5FC3\u4E8B\u6C89\u8FDB\u8349\u6839\u3002"
+      },
+      {
+        name: "Battery Park City Esplanade",
+        lat: 40.7155,
+        lng: -74.0165,
+        el: "\u6C34",
+        poem: "\u54C8\u5FB7\u900A\u6C34\u9762\u5F00\u9614\uFF0C\u98CE\u5E26\u7740\u54B8\u5473\u3002\u6C34\u6C14\u6D17\u80BA\uFF0C\u9002\u5408\u65E5\u843D\u6563\u6B65\uFF0C\u628A\u7126\u8651\u4EA4\u7ED9\u6F6E\u6C50\u3002"
+      },
+      {
+        name: "Gantry Plaza State Park",
+        lat: 40.7447,
+        lng: -73.9585,
+        el: "\u6C34",
+        poem: "\u957F\u5C9B\u57CE\u5BF9\u5CB8\u7684\u5929\u9645\u7EBF\uFF0C\u6C34\u5CB8\u957F\u6905\u4E00\u6392\u3002\u9002\u5408\u53D1\u5446\u770B\u706F\u5149\u6389\u8FDB\u6CB3\u91CC\u3002"
+      },
+      {
+        name: "Flushing Meadows Unisphere",
+        lat: 40.7464,
+        lng: -73.8447,
+        el: "\u91D1",
+        poem: "\u5730\u7403\u4EEA\u96D5\u5851\u4E0B\u7684\u5F00\u9614\u5E7F\u573A\uFF0C\u91D1\u6C14\u8C61\u5F81\u300C\u4E16\u754C\u300D\u3002\u9002\u5408\u628A\u76EE\u6807\u558A\u5C0F\u58F0\u4E00\u70B9\uFF0C\u53CD\u800C\u66F4\u6E05\u695A\u3002"
+      },
+      {
+        name: "Green-Wood Cemetery Battle Hill",
+        lat: 40.658,
+        lng: -73.9976,
+        el: "\u571F",
+        poem: "\u9AD8\u5730\u773A\u671B\u6E2F\u53E3\u7684\u9759\u8C27\u89D2\u843D\uFF0C\u571F\u6C14\u6536\u7EB3\u3002\u9002\u5408\u7406\u6E05\u8FB9\u754C\u2014\u2014\u4F55\u7269\u503C\u5F97\u505C\u7559\uFF0C\u4F55\u7269\u8BE5\u968F\u98CE\u3002"
+      }
+    ]
+  },
+  {
+    name: "\u6D1B\u6749\u77F6",
+    lat: 34.0522,
+    lng: -118.2437,
+    radius: 100,
+    el: "\u706B",
+    desc: "\u9633\u5149\u706B\u90FD\uFF0C\u7EC8\u5E74\u6674\u6717\uFF0C\u597D\u83B1\u575E\u706B\u65FA\uFF0C\u521B\u610F\u71C3\u70E7",
+    spots: [
+      {
+        name: "Griffith Observatory",
+        lat: 34.1184,
+        lng: -118.3004,
+        el: "\u706B",
+        poem: "\u5C71\u9876\u4E0A\u706B\u6C14\u6700\u65FA\uFF0C\u770B\u65E5\u843D\u628A\u6574\u5EA7\u57CE\u5E02\u70E7\u6210\u91D1\u8272\u3002\u9002\u5408\u5E26\u4E00\u4E2A\u4EBA\u53BB\uFF0C\u706B\u4E3B\u793C\uFF0C\u5171\u4EAB\u6C89\u9ED8\u6BD4\u8BF4\u8BDD\u91CD\u8981\u3002"
+      },
+      {
+        name: "Venice Beach",
+        lat: 33.985,
+        lng: -118.4695,
+        el: "\u6C34",
+        poem: "\u592A\u5E73\u6D0B\u7684\u6C34\u6C14\uFF0C\u51B2\u6D6A\u8005\u548C\u6ED1\u677F\u5C11\u5E74\u5171\u4EAB\u3002\u8131\u4E86\u978B\u8D70\u6C99\u6EE9\uFF0C\u8BA9\u6C34\u6C14\u4ECE\u811A\u5E95\u5347\u4E0A\u6765\u3002"
+      },
+      {
+        name: "Huntington Library",
+        lat: 34.1283,
+        lng: -118.1141,
+        el: "\u6728",
+        poem: "\u5723\u9A6C\u529B\u8BFA\u7684\u7EFF\u6D32\uFF0C\u6728\u6C14\u85CF\u5728\u65E5\u5F0F\u5EAD\u9662\u548C\u4E2D\u5F0F\u56ED\u6797\u91CC\u3002\u9002\u5408\u5728\u6E56\u8FB9\u5750\u4E00\u4E0B\u5348\uFF0C\u6728\u4E3B\u4EC1\uFF0C\u5BF9\u81EA\u5DF1\u4EC1\u6148\u3002"
+      },
+      {
+        name: "El Matador Beach",
+        lat: 34.0383,
+        lng: -118.8743,
+        el: "\u571F",
+        poem: "Malibu\u7684\u5CA9\u77F3\u6D77\u6EE9\uFF0C\u571F\u6C14\u5728\u6F6E\u6C50\u4E2D\u82E5\u9690\u82E5\u73B0\u3002\u65E5\u843D\u65F6\u53BB\uFF0C\u571F\u514B\u6C34\uFF0C\u6B64\u523B\u7A33\u5982\u5CA9\u77F3\u3002"
+      }
+    ]
+  }
+];
+
+// server/lib/presetCitySpots.ts
+function typeFromElement(el) {
+  const m = {
+    \u6728: "park",
+    \u6C34: "water",
+    \u706B: "viewpoint",
+    \u571F: "urban",
+    \u91D1: "monument"
+  };
+  return m[el] ?? "default";
+}
+function filterByMode3(places, mode) {
+  if (!mode) return places;
+  if (mode === "near") return places.filter((p) => (p.dist || 0) <= 1200);
+  if (mode === "mid") return places.filter((p) => (p.dist || 0) > 1200 && (p.dist || 0) <= 5500);
+  if (mode === "far") return places.filter((p) => (p.dist || 0) > 5500);
+  return places;
+}
+function pickPresetCitySpot(lat, lng, dayMasterEl, xi, mode, seed, rollId, excludeNames) {
+  const xiSet = xi?.length ? new Set(xi) : null;
+  for (const city of PRESET_CITIES) {
+    const distToCenterKm = haversine(lat, lng, city.lat, city.lng);
+    if (distToCenterKm > city.radius) continue;
+    let mapped = city.spots.map((s) => {
+      const distM = Math.round(haversine(lat, lng, s.lat, s.lng) * 1e3);
+      return {
+        name: s.name,
+        lat: s.lat,
+        lng: s.lng,
+        dist: distM,
+        type: typeFromElement(s.el)
+      };
+    });
+    if (xiSet) {
+      const byXi = mapped.filter((p) => {
+        const spot = city.spots.find((x) => x.name === p.name);
+        return spot && xiSet.has(spot.el);
+      });
+      if (byXi.length > 0) mapped = byXi;
+      else {
+        const byDay = mapped.filter((p) => {
+          const spot = city.spots.find((x) => x.name === p.name);
+          return spot && spot.el === dayMasterEl;
+        });
+        if (byDay.length > 0) mapped = byDay;
+      }
+    }
+    let pool = filterExcluded(filterByMode3(mapped, mode), excludeNames);
+    let fallback = false;
+    if (pool.length === 0) {
+      pool = filterExcluded(mapped, excludeNames);
+      fallback = true;
+    }
+    if (pool.length === 0) continue;
+    const h = hash3(
+      `${lat.toFixed(4)},${lng.toFixed(4)},${(/* @__PURE__ */ new Date()).getDate()},${seed},${mode || "preset"},r${rollId},${city.name}`
+    );
+    const pick2 = pool[h % pool.length];
+    if (pick2) return { ...pick2, fallback };
+  }
+  return null;
+}
+
 // server/lib/wikiPlaces.ts
 function inferWikiType(title) {
   const t2 = title.toLowerCase();
@@ -21717,7 +22057,7 @@ async function fetchWikiSpotsServer(lat, lng, wikiLang, mode, seed, rollId, excl
 }
 
 // server/lib/nearbySpot.ts
-async function fetchNearbySpotServer(lat, lng, element, wikiLang, mode, seed, rollId, excludeNames = []) {
+async function fetchNearbySpotServer(lat, lng, element, wikiLang, mode, seed, rollId, excludeNames = [], xi) {
   const wikiLangNorm = wikiLang?.trim() || "US";
   const mainland = isRoughlyMainlandChina(lat, lng);
   const gaodeP = mainland ? fetchGaodeSpotsServer(lat, lng, element, seed, mode, rollId, excludeNames) : Promise.resolve(null);
@@ -21727,7 +22067,7 @@ async function fetchNearbySpotServer(lat, lng, element, wikiLang, mode, seed, ro
   if (mainland && gaode) return gaode;
   if (wiki) return wiki;
   if (overpass) return overpass;
-  return null;
+  return pickPresetCitySpot(lat, lng, element, xi ?? null, mode, seed, rollId, excludeNames);
 }
 
 // server/routers/geo.ts
@@ -21753,7 +22093,9 @@ var geoRouter = createRouter({
       /** 每次抽签递增，避免「换一个」仍落到同一 POI */
       rollId: external_exports.number().int().default(0),
       /** 今日已抽过的地点名，换签时排除重复 */
-      excludeNames: external_exports.array(external_exports.string().max(200)).max(50).optional().default([])
+      excludeNames: external_exports.array(external_exports.string().max(200)).max(50).optional().default([]),
+      /** 喜用神五行 — 预制库兜底时优先匹配景点 `el` */
+      xi: external_exports.array(elementSchema).optional()
     })
   ).mutation(async ({ input }) => {
     const spot = await fetchNearbySpotServer(
@@ -21764,7 +22106,8 @@ var geoRouter = createRouter({
       input.mode,
       input.seed,
       input.rollId,
-      input.excludeNames ?? []
+      input.excludeNames ?? [],
+      input.xi
     );
     return { spot };
   })
@@ -21912,7 +22255,7 @@ if (env.isProduction && process.env.VERCEL !== "1") {
 }
 
 // server/vercel-handle.ts
-var maxDuration = 60;
+var maxDuration = 30;
 var vercel_handle_default = handle(boot_default);
 export {
   vercel_handle_default as default,
