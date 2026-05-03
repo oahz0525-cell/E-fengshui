@@ -1,34 +1,12 @@
 import type { Element } from "@contracts/fengshui";
 import { PRESET_CITIES } from "@contracts/presetCities";
-import { haversine } from "./geo";
-import { hash } from "./hash";
-import type { DestinyMode } from "./wikiPlaces";
+import { pickPresetCitySpotCore } from "@contracts/pickPresetSpotCore";
 import { OSM_OFFLINE_BY_DATASET } from "./osmOfflineRegistry";
-import { filterExcluded, normalizeSpotName } from "./spotExclude";
+import type { DestinyMode } from "./wikiPlaces";
 import type { SpotResult } from "./spotResult";
 
-function typeFromElement(el: Element): string {
-  const m: Record<Element, string> = {
-    木: "park",
-    水: "water",
-    火: "viewpoint",
-    土: "urban",
-    金: "monument",
-  };
-  return m[el] ?? "default";
-}
-
-function filterByMode(places: SpotResult[], mode: DestinyMode | null): SpotResult[] {
-  if (!mode) return places;
-  if (mode === "near") return places.filter((p) => (p.dist || 0) <= 1200);
-  if (mode === "mid") return places.filter((p) => (p.dist || 0) > 1200 && (p.dist || 0) <= 5500);
-  if (mode === "far") return places.filter((p) => (p.dist || 0) > 5500);
-  return places;
-}
-
 /**
- * 若用户落在预制城市半径内：合并手写景点 + `contracts/generated/osm/*.json` 离线 POI，
- * 按喜用神 `xi`（若有）筛五行，再按寻地之距与哈希抽签（无外网）。
+ * 预制城市抽签：手写景点 + 服务端内置 OSM JSON（contracts/generated/osm）。
  */
 export function pickPresetCitySpot(
   lat: number,
@@ -40,69 +18,20 @@ export function pickPresetCitySpot(
   rollId: number,
   excludeNames: string[],
 ): SpotResult | null {
-  const xiSet = xi?.length ? new Set(xi) : null;
-
-  for (const city of PRESET_CITIES) {
-    const distToCenterKm = haversine(lat, lng, city.lat, city.lng);
-    if (distToCenterKm > city.radius) continue;
-
-    let mapped: SpotResult[] = city.spots.map((s) => {
-      const distM = Math.round(haversine(lat, lng, s.lat, s.lng) * 1000);
-      return {
-        name: s.name,
-        lat: s.lat,
-        lng: s.lng,
-        dist: distM,
-        type: typeFromElement(s.el),
-      };
-    });
-
-    const ds = city.osmDataset ? OSM_OFFLINE_BY_DATASET[city.osmDataset] : undefined;
-    if (ds?.pois?.length) {
-      const seen = new Set(mapped.map((p) => normalizeSpotName(p.name)));
-      for (const p of ds.pois) {
-        const k = normalizeSpotName(p.name);
-        if (seen.has(k)) continue;
-        seen.add(k);
-        mapped.push({
-          name: p.name,
-          lat: p.lat,
-          lng: p.lng,
-          dist: Math.round(haversine(lat, lng, p.lat, p.lng) * 1000),
-          type: typeFromElement(p.el),
-        });
-      }
-    }
-
-    if (xiSet) {
-      const byXi = mapped.filter((p) => {
-        const spot = city.spots.find((x) => x.name === p.name);
-        return spot && xiSet.has(spot.el);
-      });
-      if (byXi.length > 0) mapped = byXi;
-      else {
-        const byDay = mapped.filter((p) => {
-          const spot = city.spots.find((x) => x.name === p.name);
-          return spot && spot.el === dayMasterEl;
-        });
-        if (byDay.length > 0) mapped = byDay;
-      }
-    }
-
-    let pool = filterExcluded(filterByMode(mapped, mode), excludeNames);
-    let fallback = false;
-    if (pool.length === 0) {
-      pool = filterExcluded(mapped, excludeNames);
-      fallback = true;
-    }
-    if (pool.length === 0) continue;
-
-    const h = hash(
-      `${lat.toFixed(4)},${lng.toFixed(4)},${new Date().getDate()},${seed},${mode || "preset"},r${rollId},${city.name}`,
-    );
-    const pick = pool[h % pool.length];
-    if (pick) return { ...pick, fallback };
-  }
-
-  return null;
+  return pickPresetCitySpotCore(
+    lat,
+    lng,
+    dayMasterEl,
+    xi,
+    mode,
+    seed,
+    rollId,
+    excludeNames,
+    PRESET_CITIES,
+    {
+      beijing: OSM_OFFLINE_BY_DATASET.beijing.pois,
+      shanghai: OSM_OFFLINE_BY_DATASET.shanghai.pois,
+      "new-york": OSM_OFFLINE_BY_DATASET["new-york"].pois,
+    },
+  );
 }

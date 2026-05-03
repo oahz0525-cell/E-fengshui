@@ -15,6 +15,8 @@ import {
 import { callAiMutation } from '@/utils/callAiMutation';
 import type { DestinyMode, Element } from '@/types';
 import type { DestinyLogItem } from '@/hooks/useDestinyQuota';
+import { PRESET_CITIES } from '@contracts/presetCities';
+import { pickPresetCitySpotCore } from '@contracts/pickPresetSpotCore';
 
 type PendingDraw = {
   mode: DestinyMode;
@@ -22,6 +24,8 @@ type PendingDraw = {
   poem: string;
   dist: number;
   fallback?: boolean;
+  /** 云端 /api/trpc 不可用，仅用浏览器内置预制城市手写景点抽签（不含服务端大包 OSM JSON） */
+  offlineApiFallback?: boolean;
 };
 
 export function DestinyScroll({
@@ -112,24 +116,14 @@ export function DestinyScroll({
     const seed = (Math.floor(Date.now() % 2_000_000_000) + rollId * 97) >>> 0;
     const xiAllowed = new Set<Element>(['木', '火', '土', '金', '水']);
     const xiPayload = (xiShen.xi ?? []).filter((x): x is Element => xiAllowed.has(x as Element));
-    try {
-      const { spot: s } = await nearbyMut.mutateAsync({
-        lat: location.lat,
-        lng: location.lng,
-        element: element as Element,
-        wikiLang: wikiLang?.trim() || 'US',
-        mode,
-        seed,
-        rollId,
-        excludeNames,
-        xi: xiPayload,
-      });
-      if (!s) {
-        setDrawError(
-          '附近暂未匹配到 OSM 地图上的具名地点（维基与 OpenStreetMap 暂无可用结果，或已被排除）。可换一个「寻地之距」或稍后再试。',
-        );
-        return;
-      }
+
+    const buildPoem = async (s: {
+      name: string;
+      lat: number;
+      lng: number;
+      dist?: number;
+      type?: string;
+    }): Promise<{ poem: string; dist: number }> => {
       let poem: string | null = null;
       if (aiPoem) {
         try {
@@ -159,14 +153,61 @@ export function DestinyScroll({
         poem = pool[idx];
       }
       const dist = s.dist ?? Math.round(haversine(location.lat, location.lng, s.lat, s.lng) * 1000);
+      return { poem: poem || '', dist };
+    };
+
+    try {
+      const { spot: s } = await nearbyMut.mutateAsync({
+        lat: location.lat,
+        lng: location.lng,
+        element: element as Element,
+        wikiLang: wikiLang?.trim() || 'US',
+        mode,
+        seed,
+        rollId,
+        excludeNames,
+        xi: xiPayload,
+      });
+      if (!s) {
+        setDrawError(
+          '附近暂未匹配到 OSM 地图上的具名地点（维基与 OpenStreetMap 暂无可用结果，或已被排除）。可换一个「寻地之距」或稍后再试。',
+        );
+        return;
+      }
+      const { poem, dist } = await buildPoem(s);
       setPendingDraw({
         mode,
         name: s.name,
-        poem: poem || '',
+        poem,
         dist,
         fallback: s.fallback,
+        offlineApiFallback: false,
       });
     } catch (e) {
+      const local = pickPresetCitySpotCore(
+        location.lat,
+        location.lng,
+        element as Element,
+        xiPayload.length ? xiPayload : null,
+        mode,
+        seed,
+        rollId,
+        excludeNames,
+        PRESET_CITIES,
+        undefined,
+      );
+      if (local) {
+        const { poem, dist } = await buildPoem(local);
+        setPendingDraw({
+          mode,
+          name: local.name,
+          poem,
+          dist,
+          fallback: local.fallback,
+          offlineApiFallback: true,
+        });
+        return;
+      }
       const raw =
         e instanceof TRPCClientError
           ? e.message
@@ -279,6 +320,11 @@ export function DestinyScroll({
                 {distStr(pendingDraw.dist)} · {xiShen.xi[0]}行之地
               </div>
               <div className="text-sm leading-[2] text-[#e8e4dc]/60 text-center italic">{pendingDraw.poem}</div>
+              {pendingDraw.offlineApiFallback && (
+                <div className="text-center text-[11px] text-amber-200/55 mt-1.5 px-2 leading-relaxed">
+                  云端接口不可用，已改用本页内置城市手写景点；修复 /api/trpc 后可使用完整离线 OSM 库与在线高德。
+                </div>
+              )}
               {pendingDraw.fallback && (
                 <div className="text-center text-[11px] text-[#6b8f4a]/40 mt-1.5">
                   {DISTANCE_BUCKETS[pendingDraw.mode].label}范围内可调地点较少，已为你放宽匹配
