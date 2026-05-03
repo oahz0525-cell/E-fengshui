@@ -19,8 +19,6 @@ type PendingDraw = {
   poem: string;
   dist: number;
   fallback?: boolean;
-  /** 云端 /api/trpc 不可用，仅用浏览器内置预制城市手写景点抽签（不含服务端大包 OSM JSON） */
-  offlineApiFallback?: boolean;
 };
 
 export function DestinyScroll({
@@ -134,7 +132,6 @@ export function DestinyScroll({
 
     try {
       let spot: SpotShape | null = null;
-      let apiReturnedSpot = false;
 
       try {
         const res = await withTimeout(
@@ -151,10 +148,7 @@ export function DestinyScroll({
           }),
           NEARBY_SPOT_API_CONNECT_MS,
         );
-        if (res.spot) {
-          spot = res.spot;
-          apiReturnedSpot = true;
-        }
+        if (res.spot) spot = res.spot;
       } catch {
         /* 逾时或网络/HTML 解析失败 */
       }
@@ -176,9 +170,7 @@ export function DestinyScroll({
       }
 
       if (!spot) {
-        setDrawError(
-          '附近暂未匹配到可用地点（云端 3 秒内无响应或无可抽签结果）。可换一个「寻地之距」或稍后再试。',
-        );
+        setDrawError('此方灵机暂未接应，可换一个「寻地之距」或稍后再摇。');
         return;
       }
 
@@ -216,7 +208,6 @@ export function DestinyScroll({
         poem: poemOut,
         dist,
         fallback: spot.fallback,
-        offlineApiFallback: !apiReturnedSpot,
       });
     } finally {
       setLoading(false);
@@ -311,11 +302,6 @@ export function DestinyScroll({
                 {distStr(pendingDraw.dist)} · {xiShen.xi[0]}行之地
               </div>
               <div className="text-sm leading-[2] text-[#e8e4dc]/60 text-center italic">{pendingDraw.poem}</div>
-              {pendingDraw.offlineApiFallback && (
-                <div className="text-center text-[11px] text-amber-200/55 mt-1.5 px-2 leading-relaxed">
-                  云端 3 秒内未返回有效地点，已改用本页内置城市手写景点（完整离线库依赖服务端）。
-                </div>
-              )}
               {pendingDraw.fallback && (
                 <div className="text-center text-[11px] text-[#6b8f4a]/40 mt-1.5">
                   {DISTANCE_BUCKETS[pendingDraw.mode].label}范围内可调地点较少，已为你放宽匹配
