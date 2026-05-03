@@ -8,6 +8,12 @@ export const STEMS: Stem[] = [
   { n: '壬', el: '水', c: '#4fc3f7', y: 0 }, { n: '癸', el: '水', c: '#4fc3f7', y: 1 },
 ];
 
+/** 日干天干 → 五行（排盘路径必须与转盘路径一致，不能用天干字符串当 XI_SHEN 的键） */
+export function stemGanToElement(gan: string): Element {
+  const row = STEMS.find((s) => s.n === gan);
+  return row?.el ?? '木';
+}
+
 export const GOALS: Record<Goal, string> = {
   creation: '创作灵感', study: '学习效率', sleep: '安睡',
   wealth: '财运', emotion: '情绪稳定', social: '人际关系',

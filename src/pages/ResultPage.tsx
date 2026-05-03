@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Navigate } from 'react-router';
 import { useAppStore } from '@/stores/useAppStore';
 import { trpc } from '@/providers/trpc';
 import { genEnv, divineWeather, calcResult } from '@/services/calcService';
@@ -142,6 +143,11 @@ export function ResultPage() {
     const w = WEATHER[cond] ?? WEATHER.clear;
     setWeather(`${w.icon} ${w.name} · ${w.desc}`);
   }, [apiStallBypass, location, setWeather, pageQuery.data?.weather]);
+
+  /** 结果页依赖内存中的诊断数据；刷新后 store 为空，/report 会乱版，故重定向首页 */
+  if (!location || !stem || !goal) {
+    return <Navigate to="/" replace />;
+  }
 
   const pageBundleSettled =
     !location ||

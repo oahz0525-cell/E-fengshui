@@ -3,7 +3,7 @@ import type {
   Goal, Element, Location, BaziResult, XiShen, DestinyMode,
   Environment, SubScores, CalcResult, Spot, Page, City,
 } from '@/types';
-import { XI_SHEN } from '@/data/elements';
+import { XI_SHEN, stemGanToElement } from '@/data/elements';
 
 interface AppState {
   page: Page;
@@ -36,7 +36,7 @@ interface AppState {
   setGoal: (g: Goal) => void;
   setLocation: (l: Location) => void;
   setStem: (s: string, el: Element) => void;
-  setBazi: (b: BaziResult, el: Element) => void;
+  setBazi: (b: BaziResult) => void;
   setWeather: (w: string) => void;
   setUserHeading: (h: number) => void;
   setCalcResult: (r: CalcResult) => void;
@@ -79,7 +79,10 @@ export const useAppStore = create<AppState>((set) => ({
   setGoal: (g) => set({ goal: g }),
   setLocation: (l) => set({ location: l }),
   setStem: (s, el) => set({ stem: s, element: el, xiShen: XI_SHEN[el] }),
-  setBazi: (b, el) => set({ bazi: b, element: el, stem: b.dm, xiShen: XI_SHEN[el] }),
+  setBazi: (b) => {
+    const el = stemGanToElement(b.dm);
+    set({ bazi: b, element: el, stem: b.dm, xiShen: XI_SHEN[el] });
+  },
   setWeather: (w) => set({ weather: w }),
   setUserHeading: (h) => set({ userHeading: h }),
   setCalcResult: (r) => set({

@@ -41,7 +41,7 @@ export function InputPage() {
   const calc = () => {
     const r = calcBazi(year, month, day, hour);
     setBz({ ...r, dm: r.dm });
-    setBazi(r, r.dm as any);
+    setBazi(r);
     setShowBazi(true);
   };
 
