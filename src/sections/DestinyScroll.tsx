@@ -110,6 +110,8 @@ export function DestinyScroll({
     rollRef.current += 1;
     const rollId = rollRef.current;
     const seed = (Math.floor(Date.now() % 2_000_000_000) + rollId * 97) >>> 0;
+    const xiAllowed = new Set<Element>(['木', '火', '土', '金', '水']);
+    const xiPayload = (xiShen.xi ?? []).filter((x): x is Element => xiAllowed.has(x as Element));
     try {
       const { spot: s } = await nearbyMut.mutateAsync({
         lat: location.lat,
@@ -120,7 +122,7 @@ export function DestinyScroll({
         seed,
         rollId,
         excludeNames,
-        xi: xiShen.xi as Element[],
+        xi: xiPayload,
       });
       if (!s) {
         setDrawError(
@@ -174,9 +176,11 @@ export function DestinyScroll({
       const hint =
         raw.includes('Unexpected token') || raw.includes('<!DOCTYPE')
           ? '（接口返回了网页而非数据：多为 Vercel 路由或 API 未生效。）'
-          : raw.includes('Failed to fetch') || raw.includes('NetworkError')
-            ? '（网络未连通或请求被拦截。）'
-            : '';
+          : /expected pattern|did not match/i.test(raw)
+            ? '（常见于 Safari：多为接口未返回 JSON，请确认 /api/trpc 部署；或与输入校验失败有关，已自动过滤非法字段后请重试。）'
+            : raw.includes('Failed to fetch') || raw.includes('NetworkError')
+              ? '（网络未连通或请求被拦截。）'
+              : '';
       setDrawError(
         raw
           ? `${raw}${hint}`
