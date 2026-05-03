@@ -198,6 +198,26 @@
   }
 }
 
+/* ===== iOS Safari：减弱毛玻璃与重滤镜（WebKit 上 backdrop-filter 成本极高） ===== */
+html[data-webkit-mobile-lite] [class*="backdrop-blur"] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* 去掉磨砂后略提高面板不透明度，避免内容「糊」在深色底上 */
+html[data-webkit-mobile-lite] [class*="bg-white/"][class*="0.025"] {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+html[data-webkit-mobile-lite] [class*="09090b"][class*="/96"] {
+  background-color: rgba(9, 9, 11, 0.98) !important;
+}
+
+html[data-webkit-mobile-lite] .destiny-shake {
+  filter: none;
+  text-shadow: 0 0 14px rgba(180, 160, 100, 0.22);
+}
+
 /* ===== SCROLLBAR ===== */
 *::-webkit-scrollbar { width: 0px; height: 0px; background: transparent; display: none; }
 * { scrollbar-width: none; -ms-overflow-style: none; }
