@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { useAppStore } from '@/stores/useAppStore';
-import { GOALS, STEMS, XI_SHEN } from '@/data/elements';
+import { GOALS, STEMS, XI_SHEN, stemGanToElement } from '@/data/elements';
 import { calcBazi } from '@/data/bazi';
 import type { Goal, Stem } from '@/types';
 
@@ -40,8 +40,12 @@ export function InputPage() {
 
   const calc = () => {
     const r = calcBazi(year, month, day, hour);
+    const el = stemGanToElement(r.dm);
+    const row = STEMS.find((s) => s.n === r.dm);
     setBz({ ...r, dm: r.dm });
     setBazi(r);
+    setPickName(r.dm);
+    setPickEl(`${el}${row?.y ? '·阴' : '·阳'} · 喜${XI_SHEN[el].xi.join('、')}`);
     setShowBazi(true);
   };
 
